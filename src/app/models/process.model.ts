@@ -4,6 +4,28 @@ export interface Dossier {
   title: string;
   process: Process;
   serviceRequest?: ServiceRequest;
+  notes: Note[];
+  participants: Participant[];
+}
+
+export interface Note {
+  id: string;
+  date: string;
+  author: string;
+  subject?: string;
+  text: string;
+  visibility: 'intern' | 'extern';
+}
+
+export interface Participant {
+  id: string;
+  role: string;
+  roleType: 'primary' | 'internal' | 'external' | 'authority';
+  name: string;
+  organization?: string;
+  email?: string;
+  phone?: string;
+  since: string;
 }
 
 export interface ServiceRequest {

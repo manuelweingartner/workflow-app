@@ -8,6 +8,8 @@ import { TasksViewComponent } from './components/tasks-view/tasks-view.component
 import { DossierDetailsComponent } from './components/dossier-details/dossier-details.component';
 import { DossierOverviewComponent } from './components/dossier-overview/dossier-overview.component';
 import { ServiceRequestComponent } from './components/service-request/service-request.component';
+import { NotesViewComponent } from './components/notes-view/notes-view.component';
+import { ParticipantsViewComponent } from './components/participants-view/participants-view.component';
 import { ProcessService } from './services/process.service';
 
 @Component({
@@ -16,7 +18,7 @@ import { ProcessService } from './services/process.service';
   imports: [
     HeaderComponent, SidebarComponent, ProcessOverviewComponent, StepDetailComponent,
     DocumentsViewComponent, TasksViewComponent, DossierDetailsComponent, DossierOverviewComponent,
-    ServiceRequestComponent,
+    ServiceRequestComponent, NotesViewComponent, ParticipantsViewComponent,
   ],
   template: `
     <app-header />
@@ -52,6 +54,16 @@ import { ProcessService } from './services/process.service';
         @case ('servicerequest') {
           <div class="content-panel">
             <app-service-request />
+          </div>
+        }
+        @case ('notes') {
+          <div class="content-panel">
+            <app-notes-view />
+          </div>
+        }
+        @case ('participants') {
+          <div class="content-panel">
+            <app-participants-view />
           </div>
         }
         @default {
@@ -101,6 +113,8 @@ export class App {
   menuItems = computed<MenuItem[]>(() => {
     const docs = this.svc.allDocuments().length;
     const tasks = this.svc.allTasks().length;
+    const notes = this.svc.notes().length;
+    const participants = this.svc.participants().length;
     const hasServiceRequest = !!this.svc.dossier$().serviceRequest;
     const srMessages = this.svc.dossier$().serviceRequest?.messages.filter(m => !m.read).length ?? 0;
 
@@ -117,8 +131,8 @@ export class App {
     items.push(
       { id: 'documents', label: 'Dokumente', icon: '<i class="material-icons">insert_drive_file</i>', badge: docs },
       { id: 'tasks', label: 'Aufgaben', icon: '<i class="material-icons">check_box</i>', badge: tasks },
-      { id: 'notes', label: 'Notizen', icon: '<i class="material-icons">chat_bubble_outline</i>', badge: 0 },
-      { id: 'participants', label: 'Beteiligungen', icon: '<i class="material-icons">people_outline</i>', badge: 0 },
+      { id: 'notes', label: 'Notizen', icon: '<i class="material-icons">chat_bubble_outline</i>', badge: notes },
+      { id: 'participants', label: 'Beteiligungen', icon: '<i class="material-icons">people_outline</i>', badge: participants },
     );
 
     return items;

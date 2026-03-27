@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Dossier, ProcessStep, Input, Task, CompletionCriterion, PortalMessage, PortalDocument } from '../models/process.model';
+import { Dossier, ProcessStep, Input, Task, CompletionCriterion, PortalMessage, PortalDocument, Note, Participant } from '../models/process.model';
 
 export interface LinkedDocument {
   input: Input;
@@ -70,6 +70,23 @@ export class ProcessService {
         .map((input) => ({ input, stepId: step.id, stepNumber: step.number, stepTitle: step.title }))
     )
   );
+
+  readonly notes = computed<Note[]>(() => this.dossier$().notes);
+  readonly participants = computed<Participant[]>(() => this.dossier$().participants);
+
+  addNote(subject: string, text: string, visibility: 'intern' | 'extern') {
+    const ds = structuredClone(this.allDossiers());
+    const d = ds.find((x) => x.id === this.activeDossierId())!;
+    d.notes.unshift({
+      id: crypto.randomUUID(),
+      date: new Date().toLocaleDateString('de-CH') + ' ' + new Date().toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }),
+      author: 'Sachbearbeiter:in',
+      subject: subject || undefined,
+      text,
+      visibility,
+    });
+    this.allDossiers.set(ds);
+  }
 
   switchDossier(id: string) {
     this.activeDossierId.set(id);
@@ -488,6 +505,20 @@ const DOSSIER_BAUGESUCH: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'n1', date: '21.02.2024 09:30', author: 'Oberholzer Martin', subject: 'Eingang Baugesuch', text: 'Baugesuch für Umbau Gebäude ist eingegangen. Unterlagen vollständig, Verfahren wird eingeleitet.', visibility: 'intern' },
+    { id: 'n2', date: '28.02.2024 15:00', author: 'Oberholzer Martin', subject: 'Vollständigkeitsprüfung OK', text: 'Alle Unterlagen geprüft und für vollständig befunden. Weiter mit öffentlicher Auflage.', visibility: 'intern' },
+    { id: 'n3', date: '20.04.2024 11:00', author: 'Oberholzer Martin', text: 'Fachberichte von Brandschutz, Statik und Energie sind alle positiv eingetroffen. Keine offenen Auflagen.', visibility: 'intern' },
+    { id: 'n4', date: '15.03.2024 08:00', author: 'System', subject: 'Öffentliche Auflage abgeschlossen', text: 'Auflagefrist ohne Einsprachen abgelaufen.', visibility: 'extern' },
+  ],
+  participants: [
+    { id: 'p1', role: 'Gesuchsteller:in', roleType: 'primary', name: 'Müller Sarah', email: 's.mueller@example.ch', phone: '079 123 45 67', since: '21.02.2024' },
+    { id: 'p2', role: 'Bauverwalter', roleType: 'internal', name: 'Oberholzer Martin', organization: 'Gemeinde Dorfname', email: 'm.oberholzer@gemeinde.ch', phone: '044 987 65 43', since: '21.02.2024' },
+    { id: 'p3', role: 'Architekt', roleType: 'external', name: 'Schmid Roland', organization: 'Schmid Architekten AG', email: 'r.schmid@architekten.ch', since: '21.02.2024' },
+    { id: 'p4', role: 'Brandschutz', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '15.03.2024' },
+    { id: 'p5', role: 'Statik', roleType: 'authority', name: 'Muster Ingenieure AG', organization: 'Muster Ingenieure AG', email: 'info@muster-ing.ch', since: '15.03.2024' },
+    { id: 'p6', role: 'Sekretariat', roleType: 'internal', name: 'Sekretariat Gemeinde', organization: 'Gemeinde Dorfname', since: '21.02.2024' },
+  ],
 };
 
 const DOSSIER_AKTENEINSICHT: Dossier = {
@@ -613,6 +644,14 @@ const DOSSIER_AKTENEINSICHT: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'ae-n1', date: '10.03.2025 10:15', author: 'Weber Claudia', subject: 'Antrag eingegangen', text: 'Antrag auf Akteneinsicht von Keller Thomas eingegangen. Persönliche Betroffenheit als Anlieger geltend gemacht.', visibility: 'intern' },
+    { id: 'ae-n2', date: '11.03.2025 09:30', author: 'Weber Claudia', text: 'Identitätsnachweis per Portal angefordert.', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'ae-p1', role: 'Antragsteller', roleType: 'primary', name: 'Keller Thomas', email: 't.keller@example.ch', since: '10.03.2025' },
+    { id: 'ae-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Weber Claudia', organization: 'Gemeindekanzlei', email: 'c.weber@gemeinde.ch', phone: '044 111 22 33', since: '10.03.2025' },
+  ],
 };
 
 const DOSSIER_EINBUERGERUNG: Dossier = {
@@ -775,6 +814,17 @@ const DOSSIER_EINBUERGERUNG: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'eb-n1', date: '15.01.2025 09:00', author: 'Huber Peter', subject: 'Einbürgerungsgesuch Rossi', text: 'Gesuch von Marco Rossi eingegangen. Wohnsitzdauer erfüllt (10 Jahre). Sprachprüfung muss noch absolviert werden.', visibility: 'intern' },
+    { id: 'eb-n2', date: '20.01.2025 10:30', author: 'Huber Peter', text: 'Termin für Sprachprüfung am 15.02.2025 vereinbart. Informationsblatt via Portal zugestellt.', visibility: 'intern' },
+    { id: 'eb-n3', date: '22.01.2025 16:30', author: 'System', subject: 'Portal-Nachricht', text: 'Herr Rossi fragt nach Vorbereitungsmaterial für die Sprachprüfung.', visibility: 'extern' },
+  ],
+  participants: [
+    { id: 'eb-p1', role: 'Gesuchsteller', roleType: 'primary', name: 'Rossi Marco', email: 'm.rossi@example.ch', phone: '079 456 78 90', since: '15.01.2025' },
+    { id: 'eb-p2', role: 'Sachbearbeiter', roleType: 'internal', name: 'Huber Peter', organization: 'Einwohnerdienste', email: 'p.huber@gemeinde.ch', phone: '044 333 44 55', since: '15.01.2025' },
+    { id: 'eb-p3', role: 'Sprachschule', roleType: 'external', name: 'Sprachschule Dorfname', organization: 'Sprachschule Dorfname GmbH', email: 'info@sprachschule.ch', since: '20.01.2025' },
+    { id: 'eb-p4', role: 'Einbürgerungskommission', roleType: 'authority', name: 'Einbürgerungskommission', organization: 'Gemeinde Dorfname', since: '15.01.2025' },
+  ],
 };
 
 const DOSSIER_GEMEINDERAT: Dossier = {
@@ -917,6 +967,16 @@ const DOSSIER_GEMEINDERAT: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'gr-n1', date: '01.03.2025 12:15', author: 'Schmid Andrea', subject: 'Anfrage eingegangen', text: 'Anfrage von Brunner Lisa betreffend Tempo-30-Zone Birkenstrasse. 45 Unterschriften beigelegt.', visibility: 'intern' },
+    { id: 'gr-n2', date: '03.03.2025 09:00', author: 'Schmid Andrea', text: 'Triage: Zuständig ist Ressort Verkehr & Infrastruktur (Meier Hans).', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'gr-p1', role: 'Antragstellerin', roleType: 'primary', name: 'Brunner Lisa', email: 'l.brunner@example.ch', since: '01.03.2025' },
+    { id: 'gr-p2', role: 'Gemeindeschreiberin', roleType: 'internal', name: 'Schmid Andrea', organization: 'Gemeindekanzlei', email: 'a.schmid@gemeinde.ch', phone: '044 555 66 77', since: '01.03.2025' },
+    { id: 'gr-p3', role: 'Ressort Verkehr', roleType: 'internal', name: 'Meier Hans', organization: 'Gemeinderat', email: 'h.meier@gemeinde.ch', since: '03.03.2025' },
+    { id: 'gr-p4', role: 'Tiefbauamt', roleType: 'authority', name: 'Tiefbauamt Gemeinde', organization: 'Tiefbauamt', since: '03.03.2025' },
+  ],
 };
 
 const DOSSIER_VERANSTALTUNG: Dossier = {
@@ -1088,6 +1148,19 @@ const DOSSIER_VERANSTALTUNG: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'va-n1', date: '20.02.2025 14:30', author: 'Frei Barbara', subject: 'Gesuch Dorffest', text: 'Gesuch für Dorffest Sommer 2025 eingegangen. Turnverein Dorfname, ca. 500 Besucher erwartet. Sicherheitskonzept fehlt noch.', visibility: 'intern' },
+    { id: 'va-n2', date: '22.02.2025 09:15', author: 'Frei Barbara', text: 'Sicherheitskonzept per Portal nachgefordert.', visibility: 'intern' },
+    { id: 'va-n3', date: '28.02.2025 16:00', author: 'Frei Barbara', subject: 'Risikostufe Mittel', text: 'Risikobeurteilung abgeschlossen: Stufe Mittel. Fachstellen Feuerpolizei, Kantonspolizei, Lebensmittelkontrolle und Lärmschutz werden konsultiert.', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'va-p1', role: 'Veranstalter', roleType: 'primary', name: 'Steiner Anna', organization: 'Turnverein Dorfname', email: 'a.steiner@turnverein.ch', phone: '079 888 99 00', since: '20.02.2025' },
+    { id: 'va-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Frei Barbara', organization: 'Gemeindekanzlei', email: 'b.frei@gemeinde.ch', phone: '044 777 88 99', since: '20.02.2025' },
+    { id: 'va-p3', role: 'Feuerpolizei', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '28.02.2025' },
+    { id: 'va-p4', role: 'Kantonspolizei', roleType: 'authority', name: 'Kantonspolizei', organization: 'Kantonspolizei', since: '28.02.2025' },
+    { id: 'va-p5', role: 'Lebensmittelkontrolle', roleType: 'authority', name: 'Lebensmittelbehörde', organization: 'Kantonales Labor', since: '28.02.2025' },
+    { id: 'va-p6', role: 'Lärmschutz', roleType: 'authority', name: 'Umweltamt', organization: 'Umweltamt Kanton', since: '28.02.2025' },
+  ],
 };
 
 const DOSSIER_KESB: Dossier = {
@@ -1258,6 +1331,17 @@ const DOSSIER_KESB: Dossier = {
       },
     ],
   },
+  notes: [
+    { id: 'kes-n1', date: '05.03.2025 08:30', author: 'Dr. Gerber Nicole', subject: 'Gefahrenmeldung eingegangen', text: 'Gefahrenmeldung von Klassenlehrerin Widmer Ruth (Primarschule Dorfname). Verdacht auf Vernachlässigung Kind S. (8 Jahre). Dringlichkeit: Hoch.', visibility: 'intern' },
+    { id: 'kes-n2', date: '05.03.2025 11:00', author: 'Dr. Gerber Nicole', text: 'Sofortmassnahmen nicht nötig gemäss Ersteinschätzung. Abklärungsauftrag wird erteilt.', visibility: 'intern' },
+    { id: 'kes-n3', date: '06.03.2025 14:15', author: 'Dr. Gerber Nicole', text: 'Ergänzungsbericht der Schulleitung via Portal eingegangen. Bestätigt regelmässiges Fehlen und Rückzugsverhalten.', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'kes-p1', role: 'Meldende Person', roleType: 'external', name: 'Widmer Ruth', organization: 'Primarschule Dorfname', email: 'r.widmer@schule-dorf.ch', since: '05.03.2025' },
+    { id: 'kes-p2', role: 'KESB-Präsidentin', roleType: 'internal', name: 'Dr. Gerber Nicole', organization: 'KESB Region', email: 'n.gerber@kesb.ch', phone: '044 987 65 43', since: '05.03.2025' },
+    { id: 'kes-p3', role: 'Betroffene Familie', roleType: 'primary', name: 'Fam. Schneider', since: '05.03.2025' },
+    { id: 'kes-p4', role: 'Sekretariat KESB', roleType: 'internal', name: 'Sekretariat KESB', organization: 'KESB Region', since: '05.03.2025' },
+  ],
 };
 
 const ALL_DOSSIERS: Dossier[] = [
