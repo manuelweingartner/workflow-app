@@ -197,38 +197,50 @@ import { ProcessStep, StepType } from '../../models/process.model';
         <!-- FLOWCHART DESIGNER -->
         <div class="fc-toolbar">
           <span class="fc-toolbar-label">Einfügen:</span>
-          <button class="fc-tool-btn" draggable="true" (dragstart)="onToolDragStart($event, 'standard')">
+          <button class="fc-tool-btn" [class.active]="selectedTool() === 'standard'" (click)="selectTool('standard')">
             <i class="material-icons">radio_button_checked</i> Schritt
           </button>
-          <button class="fc-tool-btn decision" draggable="true" (dragstart)="onToolDragStart($event, 'decision')">
+          <button class="fc-tool-btn decision" [class.active]="selectedTool() === 'decision'" (click)="selectTool('decision')">
             <i class="material-icons">call_split</i> Entscheidung
           </button>
-          <button class="fc-tool-btn parallel" draggable="true" (dragstart)="onToolDragStart($event, 'parallel')">
+          <button class="fc-tool-btn parallel" [class.active]="selectedTool() === 'parallel'" (click)="selectTool('parallel')">
             <i class="material-icons">sync</i> Parallel
           </button>
-          <button class="fc-tool-btn subprocess" draggable="true" (dragstart)="onToolDragStart($event, 'subprocess')">
+          <button class="fc-tool-btn subprocess" [class.active]="selectedTool() === 'subprocess'" (click)="selectTool('subprocess')">
             <i class="material-icons">layers</i> Sub-Prozess
           </button>
+          @if (selectedTool() || movingNodeIndex() !== null) {
+            <button class="fc-tool-btn cancel" (click)="cancelTool()">
+              <i class="material-icons">close</i> Abbrechen
+            </button>
+          }
         </div>
 
-        <div class="flowchart">
-          @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
-            <!-- Drop zone before each node -->
-            <div class="fc-drop-zone" [class.drag-over]="dragOverIndex() === idx"
-                 (dragover)="onDragOver($event, idx)" (dragleave)="onDragLeave()" (drop)="onDrop($event, idx)">
-              <div class="fc-drop-indicator">
-                <i class="material-icons">add_circle_outline</i> Hier einfügen
-              </div>
-            </div>
+        @if (selectedTool()) {
+          <div class="fc-mode-hint">
+            <i class="material-icons">touch_app</i> Klicke auf <strong>+</strong> wo der neue Schritt eingefügt werden soll
+          </div>
+        }
+        @if (movingNodeIndex() !== null) {
+          <div class="fc-mode-hint move">
+            <i class="material-icons">open_with</i> Klicke auf <strong>+</strong> an der Zielposition für "<strong>{{ svc.steps()[movingNodeIndex()!].title }}</strong>"
+          </div>
+        }
 
-            <div class="fc-node-wrapper" draggable="true"
-                 (dragstart)="onNodeDragStart($event, idx)" (dragend)="onNodeDragEnd()">
-              <!-- Node -->
+        <div class="flowchart">
+          <!-- Insert at top -->
+          <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(0)">
+            <i class="material-icons">add</i>
+          </button>
+
+          @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
+            <div class="fc-node-wrapper">
               <div class="fc-node" [class]="(step.stepType || 'standard') + ' ' + step.status"
                    [class.selected]="step.id === svc.selectedStep()?.id"
                    [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
+                   [class.moving]="movingNodeIndex() === idx"
                    (click)="svc.selectStep(step.id)">
-                <div class="fc-node-icon" (click)="cycleStepType($event, step)">
+                <div class="fc-node-icon" title="Typ wechseln" (click)="cycleStepType($event, step)">
                   @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> }
                   @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> }
                   @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> }
@@ -239,11 +251,13 @@ import { ProcessStep, StepType } from '../../models/process.model';
                   <span class="fc-node-title">{{ step.title }}</span>
                 </div>
                 <div class="fc-node-status" [class]="step.status"></div>
-                <button class="fc-node-delete" title="Schritt entfernen" (click)="deleteStep($event, step.id)">
-                  <i class="material-icons">close</i>
-                </button>
-                <div class="fc-drag-handle" title="Verschieben">
-                  <i class="material-icons">drag_indicator</i>
+                <div class="fc-node-actions">
+                  <button class="fc-node-action" title="Verschieben" (click)="startMove($event, idx)">
+                    <i class="material-icons">open_with</i>
+                  </button>
+                  <button class="fc-node-action delete" title="Löschen" (click)="deleteStep($event, step.id)">
+                    <i class="material-icons">delete</i>
+                  </button>
                 </div>
               </div>
 
@@ -290,25 +304,25 @@ import { ProcessStep, StepType } from '../../models/process.model';
                 </div>
               }
 
-              <!-- Arrow down + insert button -->
+              <!-- Arrow + insert slot -->
               @if (!last) {
                 <div class="fc-arrow-row">
                   <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
-                  <button class="fc-insert-btn" title="Schritt hier einfügen" (click)="insertAtFlowchart(idx + 1)">
-                    <i class="material-icons">add_circle</i>
-                  </button>
                 </div>
+                <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(idx + 1)">
+                  <i class="material-icons">add</i>
+                </button>
               }
             </div>
           }
 
-          <!-- Drop zone at end -->
-          <div class="fc-drop-zone" [class.drag-over]="dragOverIndex() === svc.steps().length"
-               (dragover)="onDragOver($event, svc.steps().length)" (dragleave)="onDragLeave()" (drop)="onDrop($event, svc.steps().length)">
-            <div class="fc-drop-indicator">
-              <i class="material-icons">add_circle_outline</i> Am Ende einfügen
-            </div>
+          <!-- Insert at end -->
+          <div class="fc-arrow-row">
+            <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
           </div>
+          <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(svc.steps().length)">
+            <i class="material-icons">add</i>
+          </button>
         </div>
       }
     </div>
@@ -481,15 +495,7 @@ import { ProcessStep, StepType } from '../../models/process.model';
     .fc-node-status.in-progress { background: #009fe3; }
     .fc-node-status.pending { background: #bdbdbd; }
 
-    .fc-arrow-row {
-      display: flex; align-items: center; gap: 8px; padding: 2px 0;
-    }
-    .fc-insert-btn {
-      background: none; border: none; cursor: pointer; color: #bdbdbd;
-      padding: 0; display: flex; align-items: center; transition: color 0.15s;
-    }
-    .fc-insert-btn:hover { color: #009fe3; }
-    .fc-insert-btn .material-icons { font-size: 20px; }
+    .fc-arrow-row { display: flex; justify-content: center; padding: 2px 0; }
     .fc-arrow { padding: 4px 0; }
 
     .fc-parallel {
@@ -530,56 +536,70 @@ import { ProcessStep, StepType } from '../../models/process.model';
     /* Designer toolbar */
     .fc-toolbar {
       display: flex; align-items: center; gap: 6px; padding: 8px 0 12px;
-      border-bottom: 1px solid #ebebed; margin-bottom: 12px; flex-wrap: wrap;
+      border-bottom: 1px solid #ebebed; margin-bottom: 8px; flex-wrap: wrap;
     }
     .fc-toolbar-label { font-size: 11px; color: #6c7e93; text-transform: uppercase; }
     .fc-tool-btn {
-      display: flex; align-items: center; gap: 4px; padding: 4px 10px;
+      display: flex; align-items: center; gap: 4px; padding: 5px 12px;
       background: white; border: 1px dashed #bdbdbd; border-radius: 6px;
-      font-size: 11px; color: #586475; cursor: grab; font-family: inherit;
-      transition: border-color 0.15s, background 0.15s;
+      font-size: 11px; color: #586475; cursor: pointer; font-family: inherit;
+      transition: all 0.15s;
     }
     .fc-tool-btn:hover { border-color: #009fe3; background: #e6f4fd; }
+    .fc-tool-btn.active { border-style: solid; border-width: 2px; background: #e6f4fd; font-weight: 500; }
     .fc-tool-btn.decision { border-color: #f59e0b; }
-    .fc-tool-btn.decision:hover { background: #fef9e7; }
+    .fc-tool-btn.decision.active { background: #fef9e7; }
     .fc-tool-btn.parallel { border-color: #7c3aed; }
-    .fc-tool-btn.parallel:hover { background: #f9f5ff; }
+    .fc-tool-btn.parallel.active { background: #f9f5ff; }
     .fc-tool-btn.subprocess { border-color: #009fe3; }
+    .fc-tool-btn.cancel { border-color: #8c0909; color: #8c0909; border-style: solid; }
     .fc-tool-btn .material-icons { font-size: 16px; }
 
-    /* Drop zones */
-    .fc-drop-zone {
-      min-height: 4px; transition: min-height 0.2s, padding 0.2s;
-      border-radius: 6px; display: flex; justify-content: center;
+    /* Mode hint */
+    .fc-mode-hint {
+      display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 8px;
+      background: #e6f4fd; border-radius: 6px; font-size: 12px; color: #009fe3;
     }
-    .fc-drop-zone.drag-over {
-      min-height: 44px; background: #e6f4fd; border: 2px dashed #009fe3; padding: 8px;
-    }
-    .fc-drop-indicator {
-      display: none; align-items: center; gap: 4px; font-size: 12px; color: #009fe3;
-    }
-    .fc-drop-zone.drag-over .fc-drop-indicator { display: flex; }
-    .fc-drop-indicator .material-icons { font-size: 18px; }
+    .fc-mode-hint.move { background: #f3e8ff; color: #7c3aed; }
+    .fc-mode-hint .material-icons { font-size: 16px; }
 
-    /* Node enhancements for designer */
+    /* Slot buttons (insert points) */
+    .fc-slot-btn {
+      width: 28px; height: 28px; border-radius: 50%; border: 2px dashed #bdbdbd;
+      background: white; color: #bdbdbd; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; transition: all 0.2s;
+      margin: 2px auto;
+    }
+    .fc-slot-btn .material-icons { font-size: 18px; }
+    .fc-slot-btn:hover { border-color: #009fe3; color: #009fe3; background: #e6f4fd; }
+    .fc-slot-btn.active {
+      border-color: #009fe3; color: #009fe3; border-style: solid;
+      animation: pulse-slot 1.5s infinite;
+    }
+    @keyframes pulse-slot {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,159,227,0.3); }
+      50% { box-shadow: 0 0 0 6px rgba(0,159,227,0); }
+    }
+
+    /* Node */
     .fc-node { position: relative; }
-    .fc-node-delete {
-      position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
-      background: #8c0909; color: white; border: 2px solid white; border-radius: 50%;
-      display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+    .fc-node.moving { border-color: #7c3aed; border-style: dashed; opacity: 0.6; }
+    .fc-node-actions {
+      position: absolute; top: -10px; right: -10px; display: none;
+      gap: 2px; background: white; border-radius: 12px; padding: 2px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-    .fc-node-delete .material-icons { font-size: 12px; }
-    .fc-node:hover .fc-node-delete { display: flex; }
-    .fc-drag-handle {
-      position: absolute; left: -24px; top: 50%; transform: translateY(-50%);
-      color: #bdbdbd; cursor: grab; display: none;
+    .fc-node:hover .fc-node-actions { display: flex; }
+    .fc-node-action {
+      width: 22px; height: 22px; border-radius: 50%; border: none;
+      background: #f4f5f6; color: #6c7e93; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; transition: all 0.15s;
     }
-    .fc-node:hover .fc-drag-handle { display: block; }
-    .fc-drag-handle .material-icons { font-size: 18px; }
+    .fc-node-action:hover { background: #e6f4fd; color: #009fe3; }
+    .fc-node-action.delete:hover { background: #fce8e8; color: #8c0909; }
+    .fc-node-action .material-icons { font-size: 14px; }
     .fc-node-icon { cursor: pointer; }
     .fc-node-icon:hover { opacity: 0.7; }
-    .fc-node-wrapper { cursor: default; }
-    .fc-node-wrapper[draggable="true"] { cursor: grab; }
   `,
 })
 export class ProcessOverviewComponent {
@@ -611,60 +631,44 @@ export class ProcessOverviewComponent {
     return targetIdx >= 0 && targetIdx <= currentIdx;
   }
 
-  // --- Designer: Drag & Drop ---
-  dragOverIndex = signal<number | null>(null);
-  private dragSourceType: 'tool' | 'node' = 'tool';
-  private dragStepType: StepType = 'standard';
-  private dragNodeIndex = -1;
+  // --- Designer: Click-based ---
+  selectedTool = signal<StepType | null>(null);
+  movingNodeIndex = signal<number | null>(null);
 
-  onToolDragStart(event: DragEvent, type: StepType) {
-    this.dragSourceType = 'tool';
-    this.dragStepType = type;
-    event.dataTransfer!.setData('text/plain', 'tool:' + type);
-    event.dataTransfer!.effectAllowed = 'copy';
+  selectTool(type: StepType) {
+    this.movingNodeIndex.set(null);
+    this.selectedTool.set(this.selectedTool() === type ? null : type);
   }
 
-  onNodeDragStart(event: DragEvent, index: number) {
-    this.dragSourceType = 'node';
-    this.dragNodeIndex = index;
-    event.dataTransfer!.setData('text/plain', 'node:' + index);
-    event.dataTransfer!.effectAllowed = 'move';
+  cancelTool() {
+    this.selectedTool.set(null);
+    this.movingNodeIndex.set(null);
   }
 
-  onNodeDragEnd() {
-    this.dragOverIndex.set(null);
+  startMove(event: Event, index: number) {
+    event.stopPropagation();
+    this.selectedTool.set(null);
+    this.movingNodeIndex.set(index);
   }
 
-  onDragOver(event: DragEvent, index: number) {
-    event.preventDefault();
-    event.dataTransfer!.dropEffect = this.dragSourceType === 'tool' ? 'copy' : 'move';
-    this.dragOverIndex.set(index);
-  }
-
-  onDragLeave() {
-    this.dragOverIndex.set(null);
-  }
-
-  onDrop(event: DragEvent, targetIndex: number) {
-    event.preventDefault();
-    this.dragOverIndex.set(null);
-
-    if (this.dragSourceType === 'tool') {
-      this.svc.insertStepAt(targetIndex, this.dragStepType);
-    } else if (this.dragSourceType === 'node') {
-      if (this.dragNodeIndex !== targetIndex && this.dragNodeIndex !== targetIndex - 1) {
-        this.svc.moveStep(this.dragNodeIndex, targetIndex);
+  onSlotClick(targetIndex: number) {
+    if (this.selectedTool()) {
+      this.svc.insertStepAt(targetIndex, this.selectedTool()!);
+      this.selectedTool.set(null);
+    } else if (this.movingNodeIndex() !== null) {
+      const from = this.movingNodeIndex()!;
+      if (from !== targetIndex && from !== targetIndex - 1) {
+        this.svc.moveStep(from, targetIndex);
       }
+      this.movingNodeIndex.set(null);
+    } else {
+      this.svc.insertStepAt(targetIndex);
     }
   }
 
   deleteStep(event: Event, stepId: string) {
     event.stopPropagation();
     this.svc.deleteStep(stepId);
-  }
-
-  insertAtFlowchart(index: number) {
-    this.svc.insertStepAt(index);
   }
 
   cycleStepType(event: Event, step: ProcessStep) {
