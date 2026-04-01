@@ -226,6 +226,7 @@ import { ProcessStep, StepType } from '../../models/process.model';
           <!-- Drop zone at top -->
           <div class="fc-drop-zone" [class.active]="isDragging() || selectedTool()" [class.highlight]="dropTargetIndex() === 0"
                (mouseenter)="onDropZoneEnter(0)" (mouseleave)="onDropZoneLeave()" (click)="onSlotClick(0)">
+            @if (selectedTool() && !isDragging()) { <i class="material-icons fc-drop-plus">add_circle</i> }
             <div class="fc-drop-line"></div>
           </div>
 
@@ -561,6 +562,8 @@ import { ProcessStep, StepType } from '../../models/process.model';
     .fc-drop-line {
       width: 80%; height: 3px; border-radius: 2px; background: transparent; transition: background 0.2s;
     }
+    .fc-drop-plus { font-size: 20px; color: #bdbdbd; transition: color 0.15s; }
+    .fc-drop-zone.active:hover .fc-drop-plus { color: #009fe3; }
     .fc-drop-zone.active:hover .fc-drop-line,
     .fc-drop-zone.highlight .fc-drop-line {
       background: #009fe3;
