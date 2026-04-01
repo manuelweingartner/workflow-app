@@ -1,12 +1,104 @@
+// ============================================================
+// App Tab — multi-type tab system
+// ============================================================
+
+export type TabType = 'prozess' | 'geschaeft' | 'sitzung';
+
+export interface AppTab {
+  id: string;
+  type: TabType;
+  referenceId: string;
+  label: string;
+  number?: string;
+}
+
+// ============================================================
+// Context Objects — things that process steps can link to
+// ============================================================
+
+export type ContextObjectType = 'geschaeft' | 'sitzung' | 'projekt' | 'andere';
+
+export interface ContextObject {
+  id: string;
+  type: ContextObjectType;
+  number: string;
+  title: string;
+  icon?: string;
+}
+
+export interface ContextLink {
+  contextId: string;
+  contextType: ContextObjectType;
+  label?: string;  // optional display override
+}
+
+// ============================================================
+// Process — now a standalone top-level entity
+// ============================================================
+
+export interface Process {
+  id: string;
+  title: string;
+  processOwner: ProcessOwner;
+  steps: ProcessStep[];
+}
+
+export interface ProcessOwner {
+  name: string;
+  role?: string;
+  email?: string;
+}
+
+export type StepType = 'standard' | 'decision' | 'parallel' | 'subprocess';
+
+export interface Branch {
+  id: string;
+  label: string;
+  condition: string;
+  targetStepIds: string[];
+}
+
+export interface ProcessStep {
+  id: string;
+  number: string;
+  title: string;
+  status: 'completed' | 'in-progress' | 'pending';
+  stepType?: StepType;
+  branches?: Branch[];
+  parallelPaths?: ProcessStep[][];
+  subSteps?: ProcessStep[];
+  loopBackToStepId?: string;
+  loopCondition?: string;
+  collapsed?: boolean;
+  dueDate?: string;
+  completedDate?: string;
+  responsible: string;
+  category: string;
+  contextLinks: ContextLink[];
+  tasks: Task[];
+  inputs: Input[];
+  actions: Action[];
+  completionCriteria: CompletionCriterion[];
+  conditionals: Conditional[];
+}
+
+// ============================================================
+// Dossier — a context object that can view linked process steps
+// ============================================================
+
 export interface Dossier {
   id: string;
   number: string;
   title: string;
-  process: Process;
+  processId: string;                // reference to the process
   serviceRequest?: ServiceRequest;
   notes: Note[];
   participants: Participant[];
 }
+
+// ============================================================
+// Sub-types (unchanged)
+// ============================================================
 
 export interface Note {
   id: string;
@@ -59,26 +151,6 @@ export interface PortalDocument {
   description?: string;
 }
 
-export interface Process {
-  steps: ProcessStep[];
-}
-
-export interface ProcessStep {
-  id: string;
-  number: string;
-  title: string;
-  status: 'completed' | 'in-progress' | 'pending';
-  dueDate?: string;
-  completedDate?: string;
-  responsible: string;
-  category: string;
-  tasks: Task[];
-  inputs: Input[];
-  actions: Action[];
-  completionCriteria: CompletionCriterion[];
-  conditionals: Conditional[];
-}
-
 export interface Task {
   id: string;
   title: string;
@@ -120,4 +192,51 @@ export interface Conditional {
   condition: string;
   thenAction: string;
   elseAction?: string;
+}
+
+// ============================================================
+// Sitzung — meeting with Traktanden
+// ============================================================
+
+export interface Sitzung {
+  id: string;
+  number: string;
+  title: string;
+  date: string;
+  endDate?: string;
+  location?: string;
+  chairperson: string;
+  organization: string;
+  frequency?: string;
+  status: 'geplant' | 'eingeladen' | 'durchgeführt' | 'protokolliert';
+  traktanden: Traktandum[];
+  participants: SitzungParticipant[];
+  documents: SitzungDocument[];
+}
+
+export interface Traktandum {
+  id: string;
+  number: string;
+  title: string;
+  category?: string;
+  contextLinks: ContextLink[];
+  beschlusstext?: string;
+  status: 'offen' | 'beschlossen' | 'vertagt' | 'zur-kenntnis';
+  processStepIds?: { processId: string; stepId: string }[];
+}
+
+export interface SitzungParticipant {
+  id: string;
+  name: string;
+  role: string;
+  organization?: string;
+  status: 'eingeladen' | 'zugesagt' | 'abgesagt' | 'teilgenommen';
+}
+
+export interface SitzungDocument {
+  id: string;
+  name: string;
+  fileName?: string;
+  type: 'einladung' | 'traktandum' | 'protokoll' | 'beilage';
+  uploadDate: string;
 }

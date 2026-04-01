@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
+import { ContextObject, TabType } from '../../models/process.model';
 
 @Component({
   selector: 'app-step-detail',
@@ -44,6 +45,25 @@ import { ProcessService } from '../../services/process.service';
             @if (step.completedDate) { <p class="detail-date completed">&#9989; Abgeschlossen: {{ step.completedDate }}</p> }
           }
         </div>
+
+        <!-- Kontextobjekte -->
+        @if (svc.getContextsForStep(step.id).length) {
+          <section class="section">
+            <h3>Verknüpfte Objekte <span class="count">{{ svc.getContextsForStep(step.id).length }}</span></h3>
+            @for (ctx of svc.getContextsForStep(step.id); track ctx.id) {
+              <div class="context-item clickable" (click)="openContext(ctx)">
+                <div class="ctx-type-badge" [class]="ctx.type">
+                  @if (ctx.type === 'sitzung') { Sitzung } @else if (ctx.type === 'geschaeft') { Geschäft } @else if (ctx.type === 'projekt') { Projekt } @else { Andere }
+                </div>
+                <div class="ctx-info">
+                  <span class="ctx-title">{{ ctx.title }}</span>
+                  <span class="ctx-number">{{ ctx.number }}</span>
+                </div>
+                <i class="material-icons ctx-arrow">open_in_new</i>
+              </div>
+            }
+          </section>
+        }
 
         <!-- Aufgaben -->
         <section class="section">
@@ -421,6 +441,24 @@ import { ProcessService } from '../../services/process.service';
     .empty-icon { font-size: 48px; margin-bottom: 16px; }
     .empty-state h3 { color: #586475; margin: 0 0 8px; }
     .empty-state p { font-size: 13px; }
+
+    .context-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #ebebed;
+    }
+    .ctx-type-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; font-weight: 400; white-space: nowrap;
+    }
+    .ctx-type-badge.geschaeft { background: #e6f4fd; color: #009fe3; }
+    .ctx-type-badge.sitzung { background: #f3e8ff; color: #7c3aed; }
+    .ctx-type-badge.projekt { background: #eef7ea; color: #3f971a; }
+    .ctx-type-badge.andere { background: #f4f5f6; color: #6c7e93; }
+    .context-item.clickable { cursor: pointer; transition: background 0.15s; }
+    .context-item.clickable:hover { background: #f4f5f6; }
+    .ctx-info { flex: 1; display: flex; flex-direction: column; }
+    .ctx-title { font-size: 14px; color: #353c46; }
+    .ctx-number { font-size: 12px; color: #6c7e93; }
+    .ctx-arrow { font-size: 18px; color: #bdbdbd; }
+    .context-item.clickable:hover .ctx-arrow { color: #009fe3; }
   `,
 })
 export class StepDetailComponent {
@@ -482,5 +520,9 @@ export class StepDetailComponent {
 
   actionTypeLabel(type: string) {
     return { standard: 'Standard', script: 'Skript', ai: 'KI+' }[type] ?? type;
+  }
+
+  openContext(ctx: ContextObject) {
+    this.svc.openTab(ctx.type as TabType, ctx.id);
   }
 }

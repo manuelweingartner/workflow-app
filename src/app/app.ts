@@ -10,6 +10,9 @@ import { DossierOverviewComponent } from './components/dossier-overview/dossier-
 import { ServiceRequestComponent } from './components/service-request/service-request.component';
 import { NotesViewComponent } from './components/notes-view/notes-view.component';
 import { ParticipantsViewComponent } from './components/participants-view/participants-view.component';
+import { ProcessViewComponent } from './components/process-view/process-view.component';
+import { SitzungViewComponent } from './components/sitzung-view/sitzung-view.component';
+import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { ProcessService } from './services/process.service';
 
 @Component({
@@ -19,61 +22,62 @@ import { ProcessService } from './services/process.service';
     HeaderComponent, SidebarComponent, ProcessOverviewComponent, StepDetailComponent,
     DocumentsViewComponent, TasksViewComponent, DossierDetailsComponent, DossierOverviewComponent,
     ServiceRequestComponent, NotesViewComponent, ParticipantsViewComponent,
+    ProcessViewComponent, SitzungViewComponent, DashboardComponent,
   ],
   template: `
     <app-header />
+    @if (svc.isDashboard()) {
+      <app-dashboard />
+    } @else {
     <div class="main-layout">
-      <app-sidebar [items]="menuItems()" [activeId]="svc.activeMenu()" (itemClick)="svc.setActiveMenu($event)" />
-      @switch (svc.activeMenu()) {
-        @case ('process') {
-          <app-process-overview />
-          <div class="detail-panel">
-            <app-step-detail />
-          </div>
+      @switch (svc.activeTabType()) {
+        @case ('prozess') {
+          <app-process-view />
         }
-        @case ('documents') {
-          <div class="content-panel">
-            <app-documents-view />
-          </div>
+        @case ('sitzung') {
+          <app-sitzung-view />
         }
-        @case ('tasks') {
-          <div class="content-panel">
-            <app-tasks-view />
-          </div>
-        }
-        @case ('details') {
-          <div class="content-panel">
-            <app-dossier-details />
-          </div>
-        }
-        @case ('overview') {
-          <div class="content-panel">
-            <app-dossier-overview />
-          </div>
-        }
-        @case ('servicerequest') {
-          <div class="content-panel">
-            <app-service-request />
-          </div>
-        }
-        @case ('notes') {
-          <div class="content-panel">
-            <app-notes-view />
-          </div>
-        }
-        @case ('participants') {
-          <div class="content-panel">
-            <app-participants-view />
-          </div>
-        }
-        @default {
-          <div class="placeholder-content">
-            <h2>{{ getMenuLabel(svc.activeMenu()) }}</h2>
-            <p>Dieser Bereich ist noch nicht implementiert.</p>
-          </div>
+        @case ('geschaeft') {
+          <app-sidebar [items]="geschaeftMenuItems()" [activeId]="svc.activeMenu()" (itemClick)="svc.setActiveMenu($event)" />
+          @switch (svc.activeMenu()) {
+            @case ('process') {
+              <app-process-overview />
+              <div class="detail-panel">
+                <app-step-detail />
+              </div>
+            }
+            @case ('documents') {
+              <div class="content-panel"><app-documents-view /></div>
+            }
+            @case ('tasks') {
+              <div class="content-panel"><app-tasks-view /></div>
+            }
+            @case ('details') {
+              <div class="content-panel"><app-dossier-details /></div>
+            }
+            @case ('overview') {
+              <div class="content-panel"><app-dossier-overview /></div>
+            }
+            @case ('servicerequest') {
+              <div class="content-panel"><app-service-request /></div>
+            }
+            @case ('notes') {
+              <div class="content-panel"><app-notes-view /></div>
+            }
+            @case ('participants') {
+              <div class="content-panel"><app-participants-view /></div>
+            }
+            @default {
+              <div class="placeholder-content">
+                <h2>{{ getMenuLabel(svc.activeMenu()) }}</h2>
+                <p>Dieser Bereich ist noch nicht implementiert.</p>
+              </div>
+            }
+          }
         }
       }
     </div>
+    }
   `,
   styles: `
     :host {
@@ -88,21 +92,11 @@ import { ProcessService } from './services/process.service';
       overflow: hidden;
       background: #f4f5f6;
     }
-    .detail-panel {
-      flex: 1;
-      overflow-y: auto;
-    }
-    .content-panel {
-      flex: 1;
-      overflow-y: auto;
-    }
+    .detail-panel { flex: 1; overflow-y: auto; }
+    .content-panel { flex: 1; overflow-y: auto; }
     .placeholder-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #6c7e93;
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; color: #6c7e93;
     }
     .placeholder-content h2 { color: #586475; }
   `,
@@ -110,7 +104,7 @@ import { ProcessService } from './services/process.service';
 export class App {
   svc = inject(ProcessService);
 
-  menuItems = computed<MenuItem[]>(() => {
+  geschaeftMenuItems = computed<MenuItem[]>(() => {
     const docs = this.svc.allDocuments().length;
     const tasks = this.svc.allTasks().length;
     const notes = this.svc.notes().length;
@@ -139,6 +133,6 @@ export class App {
   });
 
   getMenuLabel(id: string): string {
-    return this.menuItems().find((m) => m.id === id)?.label ?? '';
+    return this.geschaeftMenuItems().find((m) => m.id === id)?.label ?? '';
   }
 }
