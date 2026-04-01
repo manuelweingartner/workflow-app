@@ -290,10 +290,13 @@ import { ProcessStep, StepType } from '../../models/process.model';
                 </div>
               }
 
-              <!-- Arrow down -->
+              <!-- Arrow down + insert button -->
               @if (!last) {
-                <div class="fc-arrow">
+                <div class="fc-arrow-row">
                   <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
+                  <button class="fc-insert-btn" title="Schritt hier einfügen" (click)="insertAtFlowchart(idx + 1)">
+                    <i class="material-icons">add_circle</i>
+                  </button>
                 </div>
               }
             </div>
@@ -478,6 +481,15 @@ import { ProcessStep, StepType } from '../../models/process.model';
     .fc-node-status.in-progress { background: #009fe3; }
     .fc-node-status.pending { background: #bdbdbd; }
 
+    .fc-arrow-row {
+      display: flex; align-items: center; gap: 8px; padding: 2px 0;
+    }
+    .fc-insert-btn {
+      background: none; border: none; cursor: pointer; color: #bdbdbd;
+      padding: 0; display: flex; align-items: center; transition: color 0.15s;
+    }
+    .fc-insert-btn:hover { color: #009fe3; }
+    .fc-insert-btn .material-icons { font-size: 20px; }
     .fc-arrow { padding: 4px 0; }
 
     .fc-parallel {
@@ -608,12 +620,14 @@ export class ProcessOverviewComponent {
   onToolDragStart(event: DragEvent, type: StepType) {
     this.dragSourceType = 'tool';
     this.dragStepType = type;
+    event.dataTransfer!.setData('text/plain', 'tool:' + type);
     event.dataTransfer!.effectAllowed = 'copy';
   }
 
   onNodeDragStart(event: DragEvent, index: number) {
     this.dragSourceType = 'node';
     this.dragNodeIndex = index;
+    event.dataTransfer!.setData('text/plain', 'node:' + index);
     event.dataTransfer!.effectAllowed = 'move';
   }
 
@@ -647,6 +661,10 @@ export class ProcessOverviewComponent {
   deleteStep(event: Event, stepId: string) {
     event.stopPropagation();
     this.svc.deleteStep(stepId);
+  }
+
+  insertAtFlowchart(index: number) {
+    this.svc.insertStepAt(index);
   }
 
   cycleStepType(event: Event, step: ProcessStep) {
