@@ -35,8 +35,8 @@ export class ProcessService {
   private _sitzungen = signal<Sitzung[]>(ALL_SITZUNGEN);
 
   // --- Tab system ---
-  private _tabs = signal<AppTab[]>(INITIAL_TABS);
-  private _activeTabId = signal<string>('tab-proc-bau');
+  private _tabs = signal<AppTab[]>([]);
+  private _activeTabId = signal<string>('');
   private selectedStepId = signal<string | null>(null);
   private _activeMenu = signal('process');
 
@@ -286,6 +286,60 @@ export class ProcessService {
     p.steps.splice(idx + 1, 0, newStep);
     this.updateProcess(p);
     this.selectedStepId.set(newStep.id);
+  }
+
+  insertStepAt(index: number, stepType?: string) {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const p = structuredClone(proc);
+    const newStep: ProcessStep = {
+      id: crypto.randomUUID(),
+      number: 'NEU',
+      title: stepType === 'decision' ? 'Neue Entscheidung' : stepType === 'parallel' ? 'Neuer Parallel-Schritt' : stepType === 'subprocess' ? 'Neuer Sub-Prozess' : 'Neuer Prozessschritt',
+      status: 'pending',
+      responsible: '',
+      category: p.steps[0]?.category || 'Allgemein',
+      stepType: (stepType as ProcessStep['stepType']) || undefined,
+      contextLinks: [],
+      tasks: [],
+      inputs: [],
+      actions: [],
+      completionCriteria: [],
+      conditionals: [],
+    };
+    p.steps.splice(index, 0, newStep);
+    this.updateProcess(p);
+    this.selectedStepId.set(newStep.id);
+  }
+
+  moveStep(fromIndex: number, toIndex: number) {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const p = structuredClone(proc);
+    const [moved] = p.steps.splice(fromIndex, 1);
+    const adjustedTo = toIndex > fromIndex ? toIndex - 1 : toIndex;
+    p.steps.splice(adjustedTo, 0, moved);
+    this.updateProcess(p);
+  }
+
+  replaceAllSteps(newSteps: ProcessStep[]) {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const p = structuredClone(proc);
+    p.steps = newSteps;
+    this.updateProcess(p);
+    this.selectedStepId.set(null);
+  }
+
+  deleteStep(stepId: string) {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const p = structuredClone(proc);
+    p.steps = p.steps.filter((s) => s.id !== stepId);
+    this.updateProcess(p);
+    if (this.selectedStepId() === stepId) {
+      this.selectedStepId.set(null);
+    }
   }
 
   updateStep(updated: ProcessStep) {

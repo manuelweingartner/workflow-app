@@ -262,7 +262,7 @@ import { ContextObject, TabType } from '../../models/process.model';
       </div>
     } @else {
       <div class="empty-state">
-        <div class="empty-icon">&#128073;</div>
+        <div class="empty-icon">&#128072;</div>
         <h3>Prozessschritt auswählen</h3>
         <p>Klicke links auf einen Schritt, um die Details anzuzeigen.</p>
       </div>

@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { ProcessService } from '../../services/process.service';
-import { ProcessStep } from '../../models/process.model';
+import { ProcessStep, StepType } from '../../models/process.model';
 
 @Component({
   selector: 'app-process-overview',
@@ -194,16 +194,41 @@ import { ProcessStep } from '../../models/process.model';
           }
         </div>
       } @else {
-        <!-- FLOWCHART VIEW -->
+        <!-- FLOWCHART DESIGNER -->
+        <div class="fc-toolbar">
+          <span class="fc-toolbar-label">Einfügen:</span>
+          <button class="fc-tool-btn" draggable="true" (dragstart)="onToolDragStart($event, 'standard')">
+            <i class="material-icons">radio_button_checked</i> Schritt
+          </button>
+          <button class="fc-tool-btn decision" draggable="true" (dragstart)="onToolDragStart($event, 'decision')">
+            <i class="material-icons">call_split</i> Entscheidung
+          </button>
+          <button class="fc-tool-btn parallel" draggable="true" (dragstart)="onToolDragStart($event, 'parallel')">
+            <i class="material-icons">sync</i> Parallel
+          </button>
+          <button class="fc-tool-btn subprocess" draggable="true" (dragstart)="onToolDragStart($event, 'subprocess')">
+            <i class="material-icons">layers</i> Sub-Prozess
+          </button>
+        </div>
+
         <div class="flowchart">
-          @for (step of svc.steps(); track step.id; let last = $last) {
-            <div class="fc-node-wrapper">
+          @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
+            <!-- Drop zone before each node -->
+            <div class="fc-drop-zone" [class.drag-over]="dragOverIndex() === idx"
+                 (dragover)="onDragOver($event, idx)" (dragleave)="onDragLeave()" (drop)="onDrop($event, idx)">
+              <div class="fc-drop-indicator">
+                <i class="material-icons">add_circle_outline</i> Hier einfügen
+              </div>
+            </div>
+
+            <div class="fc-node-wrapper" draggable="true"
+                 (dragstart)="onNodeDragStart($event, idx)" (dragend)="onNodeDragEnd()">
               <!-- Node -->
               <div class="fc-node" [class]="(step.stepType || 'standard') + ' ' + step.status"
                    [class.selected]="step.id === svc.selectedStep()?.id"
                    [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
                    (click)="svc.selectStep(step.id)">
-                <div class="fc-node-icon">
+                <div class="fc-node-icon" (click)="cycleStepType($event, step)">
                   @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> }
                   @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> }
                   @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> }
@@ -214,6 +239,12 @@ import { ProcessStep } from '../../models/process.model';
                   <span class="fc-node-title">{{ step.title }}</span>
                 </div>
                 <div class="fc-node-status" [class]="step.status"></div>
+                <button class="fc-node-delete" title="Schritt entfernen" (click)="deleteStep($event, step.id)">
+                  <i class="material-icons">close</i>
+                </button>
+                <div class="fc-drag-handle" title="Verschieben">
+                  <i class="material-icons">drag_indicator</i>
+                </div>
               </div>
 
               <!-- Parallel expansion -->
@@ -267,6 +298,14 @@ import { ProcessStep } from '../../models/process.model';
               }
             </div>
           }
+
+          <!-- Drop zone at end -->
+          <div class="fc-drop-zone" [class.drag-over]="dragOverIndex() === svc.steps().length"
+               (dragover)="onDragOver($event, svc.steps().length)" (dragleave)="onDragLeave()" (drop)="onDrop($event, svc.steps().length)">
+            <div class="fc-drop-indicator">
+              <i class="material-icons">add_circle_outline</i> Am Ende einfügen
+            </div>
+          </div>
         </div>
       }
     </div>
@@ -475,6 +514,60 @@ import { ProcessStep } from '../../models/process.model';
       background: #fce8e8; border-radius: 6px; font-size: 11px; color: #8c0909;
     }
     .fc-loop .material-icons { font-size: 14px; }
+
+    /* Designer toolbar */
+    .fc-toolbar {
+      display: flex; align-items: center; gap: 6px; padding: 8px 0 12px;
+      border-bottom: 1px solid #ebebed; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .fc-toolbar-label { font-size: 11px; color: #6c7e93; text-transform: uppercase; }
+    .fc-tool-btn {
+      display: flex; align-items: center; gap: 4px; padding: 4px 10px;
+      background: white; border: 1px dashed #bdbdbd; border-radius: 6px;
+      font-size: 11px; color: #586475; cursor: grab; font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .fc-tool-btn:hover { border-color: #009fe3; background: #e6f4fd; }
+    .fc-tool-btn.decision { border-color: #f59e0b; }
+    .fc-tool-btn.decision:hover { background: #fef9e7; }
+    .fc-tool-btn.parallel { border-color: #7c3aed; }
+    .fc-tool-btn.parallel:hover { background: #f9f5ff; }
+    .fc-tool-btn.subprocess { border-color: #009fe3; }
+    .fc-tool-btn .material-icons { font-size: 16px; }
+
+    /* Drop zones */
+    .fc-drop-zone {
+      min-height: 4px; transition: min-height 0.2s, padding 0.2s;
+      border-radius: 6px; display: flex; justify-content: center;
+    }
+    .fc-drop-zone.drag-over {
+      min-height: 44px; background: #e6f4fd; border: 2px dashed #009fe3; padding: 8px;
+    }
+    .fc-drop-indicator {
+      display: none; align-items: center; gap: 4px; font-size: 12px; color: #009fe3;
+    }
+    .fc-drop-zone.drag-over .fc-drop-indicator { display: flex; }
+    .fc-drop-indicator .material-icons { font-size: 18px; }
+
+    /* Node enhancements for designer */
+    .fc-node { position: relative; }
+    .fc-node-delete {
+      position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
+      background: #8c0909; color: white; border: 2px solid white; border-radius: 50%;
+      display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+    }
+    .fc-node-delete .material-icons { font-size: 12px; }
+    .fc-node:hover .fc-node-delete { display: flex; }
+    .fc-drag-handle {
+      position: absolute; left: -24px; top: 50%; transform: translateY(-50%);
+      color: #bdbdbd; cursor: grab; display: none;
+    }
+    .fc-node:hover .fc-drag-handle { display: block; }
+    .fc-drag-handle .material-icons { font-size: 18px; }
+    .fc-node-icon { cursor: pointer; }
+    .fc-node-icon:hover { opacity: 0.7; }
+    .fc-node-wrapper { cursor: default; }
+    .fc-node-wrapper[draggable="true"] { cursor: grab; }
   `,
 })
 export class ProcessOverviewComponent {
@@ -504,5 +597,63 @@ export class ProcessOverviewComponent {
     const currentIdx = steps.findIndex((s) => s.id === step.id);
     const targetIdx = steps.findIndex((s) => s.id === branch.targetStepIds[0]);
     return targetIdx >= 0 && targetIdx <= currentIdx;
+  }
+
+  // --- Designer: Drag & Drop ---
+  dragOverIndex = signal<number | null>(null);
+  private dragSourceType: 'tool' | 'node' = 'tool';
+  private dragStepType: StepType = 'standard';
+  private dragNodeIndex = -1;
+
+  onToolDragStart(event: DragEvent, type: StepType) {
+    this.dragSourceType = 'tool';
+    this.dragStepType = type;
+    event.dataTransfer!.effectAllowed = 'copy';
+  }
+
+  onNodeDragStart(event: DragEvent, index: number) {
+    this.dragSourceType = 'node';
+    this.dragNodeIndex = index;
+    event.dataTransfer!.effectAllowed = 'move';
+  }
+
+  onNodeDragEnd() {
+    this.dragOverIndex.set(null);
+  }
+
+  onDragOver(event: DragEvent, index: number) {
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = this.dragSourceType === 'tool' ? 'copy' : 'move';
+    this.dragOverIndex.set(index);
+  }
+
+  onDragLeave() {
+    this.dragOverIndex.set(null);
+  }
+
+  onDrop(event: DragEvent, targetIndex: number) {
+    event.preventDefault();
+    this.dragOverIndex.set(null);
+
+    if (this.dragSourceType === 'tool') {
+      this.svc.insertStepAt(targetIndex, this.dragStepType);
+    } else if (this.dragSourceType === 'node') {
+      if (this.dragNodeIndex !== targetIndex && this.dragNodeIndex !== targetIndex - 1) {
+        this.svc.moveStep(this.dragNodeIndex, targetIndex);
+      }
+    }
+  }
+
+  deleteStep(event: Event, stepId: string) {
+    event.stopPropagation();
+    this.svc.deleteStep(stepId);
+  }
+
+  cycleStepType(event: Event, step: ProcessStep) {
+    event.stopPropagation();
+    const types: (StepType | undefined)[] = [undefined, 'decision', 'parallel', 'subprocess'];
+    const currentIdx = types.indexOf(step.stepType);
+    const nextType = types[(currentIdx + 1) % types.length];
+    this.svc.updateStepField(step.id, { stepType: nextType } as Partial<ProcessStep>);
   }
 }

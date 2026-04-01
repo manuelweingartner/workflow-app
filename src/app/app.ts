@@ -13,6 +13,7 @@ import { ParticipantsViewComponent } from './components/participants-view/partic
 import { ProcessViewComponent } from './components/process-view/process-view.component';
 import { SitzungViewComponent } from './components/sitzung-view/sitzung-view.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
+import { AiAssistantComponent } from './components/ai-assistant/ai-assistant.component';
 import { ProcessService } from './services/process.service';
 
 @Component({
@@ -22,10 +23,11 @@ import { ProcessService } from './services/process.service';
     HeaderComponent, SidebarComponent, ProcessOverviewComponent, StepDetailComponent,
     DocumentsViewComponent, TasksViewComponent, DossierDetailsComponent, DossierOverviewComponent,
     ServiceRequestComponent, NotesViewComponent, ParticipantsViewComponent,
-    ProcessViewComponent, SitzungViewComponent, DashboardComponent,
+    ProcessViewComponent, SitzungViewComponent, DashboardComponent, AiAssistantComponent,
   ],
   template: `
     <app-header />
+    <app-ai-assistant />
     @if (svc.isDashboard()) {
       <app-dashboard />
     } @else {
