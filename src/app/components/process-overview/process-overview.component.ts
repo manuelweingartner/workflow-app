@@ -209,7 +209,7 @@ import { ProcessStep, StepType } from '../../models/process.model';
           <button class="fc-tool-btn subprocess" [class.active]="selectedTool() === 'subprocess'" (click)="selectTool('subprocess')">
             <i class="material-icons">layers</i> Sub-Prozess
           </button>
-          @if (selectedTool() || movingNodeIndex() !== null) {
+          @if (selectedTool()) {
             <button class="fc-tool-btn cancel" (click)="cancelTool()">
               <i class="material-icons">close</i> Abbrechen
             </button>
@@ -221,25 +221,24 @@ import { ProcessStep, StepType } from '../../models/process.model';
             <i class="material-icons">touch_app</i> Klicke auf <strong>+</strong> wo der neue Schritt eingefügt werden soll
           </div>
         }
-        @if (movingNodeIndex() !== null) {
-          <div class="fc-mode-hint move">
-            <i class="material-icons">open_with</i> Klicke auf <strong>+</strong> an der Zielposition für "<strong>{{ svc.steps()[movingNodeIndex()!].title }}</strong>"
-          </div>
-        }
 
-        <div class="flowchart">
-          <!-- Insert at top -->
-          <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(0)">
-            <i class="material-icons">add</i>
-          </button>
+        <div class="flowchart" #flowchartEl>
+          <!-- Drop zone at top -->
+          <div class="fc-drop-zone" [class.active]="isDragging() || selectedTool()" [class.highlight]="dropTargetIndex() === 0"
+               (mouseenter)="onDropZoneEnter(0)" (mouseleave)="onDropZoneLeave()" (click)="onSlotClick(0)">
+            <div class="fc-drop-line"></div>
+          </div>
 
           @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
-            <div class="fc-node-wrapper">
+            <div class="fc-node-wrapper" [class.dragging]="dragSourceIndex() === idx">
               <div class="fc-node" [class]="(step.stepType || 'standard') + ' ' + step.status"
                    [class.selected]="step.id === svc.selectedStep()?.id"
                    [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
-                   [class.moving]="movingNodeIndex() === idx"
                    (click)="svc.selectStep(step.id)">
+                <!-- Drag handle -->
+                <div class="fc-drag-handle" (mousedown)="onDragStart($event, idx)">
+                  <i class="material-icons">drag_indicator</i>
+                </div>
                 <div class="fc-node-icon" title="Typ wechseln" (click)="cycleStepType($event, step)">
                   @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> }
                   @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> }
@@ -251,14 +250,9 @@ import { ProcessStep, StepType } from '../../models/process.model';
                   <span class="fc-node-title">{{ step.title }}</span>
                 </div>
                 <div class="fc-node-status" [class]="step.status"></div>
-                <div class="fc-node-actions">
-                  <button class="fc-node-action" title="Verschieben" (click)="startMove($event, idx)">
-                    <i class="material-icons">open_with</i>
-                  </button>
-                  <button class="fc-node-action delete" title="Löschen" (click)="deleteStep($event, step.id)">
-                    <i class="material-icons">delete</i>
-                  </button>
-                </div>
+                <button class="fc-node-delete" title="Löschen" (click)="deleteStep($event, step.id)">
+                  <i class="material-icons">close</i>
+                </button>
               </div>
 
               <!-- Parallel expansion -->
@@ -274,8 +268,6 @@ import { ProcessStep, StepType } from '../../models/process.model';
                   }
                 </div>
               }
-
-              <!-- Branches -->
               @if (step.stepType === 'decision' && step.branches?.length) {
                 <div class="fc-branches">
                   @for (branch of step.branches; track branch.id) {
@@ -287,8 +279,6 @@ import { ProcessStep, StepType } from '../../models/process.model';
                   }
                 </div>
               }
-
-              <!-- Sub-steps -->
               @if (step.stepType === 'subprocess' && step.subSteps?.length) {
                 <div class="fc-substeps">
                   @for (sub of step.subSteps; track sub.id) {
@@ -296,34 +286,31 @@ import { ProcessStep, StepType } from '../../models/process.model';
                   }
                 </div>
               }
-
-              <!-- Loop -->
               @if (step.loopBackToStepId) {
                 <div class="fc-loop">
                   <i class="material-icons">replay</i> {{ step.loopCondition }}
                 </div>
               }
 
-              <!-- Arrow + insert slot -->
-              @if (!last) {
-                <div class="fc-arrow-row">
-                  <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
-                </div>
-                <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(idx + 1)">
-                  <i class="material-icons">add</i>
-                </button>
-              }
+              <!-- Arrow + drop zone -->
+              <div class="fc-arrow-row">
+                <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
+              </div>
+              <div class="fc-drop-zone" [class.active]="isDragging() || selectedTool()" [class.highlight]="dropTargetIndex() === idx + 1"
+                   (mouseenter)="onDropZoneEnter(idx + 1)" (mouseleave)="onDropZoneLeave()" (click)="onSlotClick(idx + 1)">
+                <div class="fc-drop-line"></div>
+              </div>
             </div>
           }
-
-          <!-- Insert at end -->
-          <div class="fc-arrow-row">
-            <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
-          </div>
-          <button class="fc-slot-btn" [class.active]="selectedTool() || movingNodeIndex() !== null" (click)="onSlotClick(svc.steps().length)">
-            <i class="material-icons">add</i>
-          </button>
         </div>
+
+        <!-- Drag ghost -->
+        @if (isDragging()) {
+          <div class="fc-ghost" [style.top.px]="ghostY()" [style.left.px]="ghostX()">
+            <i class="material-icons">drag_indicator</i>
+            {{ svc.steps()[dragSourceIndex()!].title }}
+          </div>
+        }
       }
     </div>
   `,
@@ -560,46 +547,54 @@ import { ProcessStep, StepType } from '../../models/process.model';
       display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 8px;
       background: #e6f4fd; border-radius: 6px; font-size: 12px; color: #009fe3;
     }
-    .fc-mode-hint.move { background: #f3e8ff; color: #7c3aed; }
     .fc-mode-hint .material-icons { font-size: 16px; }
 
-    /* Slot buttons (insert points) */
-    .fc-slot-btn {
-      width: 28px; height: 28px; border-radius: 50%; border: 2px dashed #bdbdbd;
-      background: white; color: #bdbdbd; cursor: pointer; display: flex;
-      align-items: center; justify-content: center; transition: all 0.2s;
-      margin: 2px auto;
+    /* Drop zones between nodes */
+    .fc-drop-zone {
+      height: 8px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; transition: all 0.2s; cursor: default;
     }
-    .fc-slot-btn .material-icons { font-size: 18px; }
-    .fc-slot-btn:hover { border-color: #009fe3; color: #009fe3; background: #e6f4fd; }
-    .fc-slot-btn.active {
-      border-color: #009fe3; color: #009fe3; border-style: solid;
-      animation: pulse-slot 1.5s infinite;
+    .fc-drop-zone.active { height: 24px; cursor: pointer; }
+    .fc-drop-zone.active:hover, .fc-drop-zone.highlight {
+      background: #e6f4fd;
     }
-    @keyframes pulse-slot {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(0,159,227,0.3); }
-      50% { box-shadow: 0 0 0 6px rgba(0,159,227,0); }
+    .fc-drop-line {
+      width: 80%; height: 3px; border-radius: 2px; background: transparent; transition: background 0.2s;
+    }
+    .fc-drop-zone.active:hover .fc-drop-line,
+    .fc-drop-zone.highlight .fc-drop-line {
+      background: #009fe3;
     }
 
     /* Node */
     .fc-node { position: relative; }
-    .fc-node.moving { border-color: #7c3aed; border-style: dashed; opacity: 0.6; }
-    .fc-node-actions {
-      position: absolute; top: -10px; right: -10px; display: none;
-      gap: 2px; background: white; border-radius: 12px; padding: 2px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    .fc-node-wrapper.dragging { opacity: 0.3; }
+    .fc-drag-handle {
+      color: #bdbdbd; cursor: grab; display: flex; align-items: center;
+      padding: 0 2px; transition: color 0.15s;
     }
-    .fc-node:hover .fc-node-actions { display: flex; }
-    .fc-node-action {
-      width: 22px; height: 22px; border-radius: 50%; border: none;
-      background: #f4f5f6; color: #6c7e93; cursor: pointer; display: flex;
-      align-items: center; justify-content: center; transition: all 0.15s;
+    .fc-drag-handle:hover { color: #009fe3; }
+    .fc-drag-handle:active { cursor: grabbing; }
+    .fc-drag-handle .material-icons { font-size: 20px; }
+    .fc-node-delete {
+      position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
+      background: #8c0909; color: white; border: 2px solid white; border-radius: 50%;
+      display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
     }
-    .fc-node-action:hover { background: #e6f4fd; color: #009fe3; }
-    .fc-node-action.delete:hover { background: #fce8e8; color: #8c0909; }
-    .fc-node-action .material-icons { font-size: 14px; }
+    .fc-node-delete .material-icons { font-size: 12px; }
+    .fc-node:hover .fc-node-delete { display: flex; }
     .fc-node-icon { cursor: pointer; }
     .fc-node-icon:hover { opacity: 0.7; }
+
+    /* Drag ghost */
+    .fc-ghost {
+      position: fixed; z-index: 9999; pointer-events: none;
+      display: flex; align-items: center; gap: 6px;
+      background: white; border: 2px solid #009fe3; border-radius: 8px;
+      padding: 8px 14px; font-size: 13px; color: #353c46;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translate(-50%, -50%);
+    }
+    .fc-ghost .material-icons { font-size: 16px; color: #009fe3; }
   `,
 })
 export class ProcessOverviewComponent {
@@ -631,36 +626,22 @@ export class ProcessOverviewComponent {
     return targetIdx >= 0 && targetIdx <= currentIdx;
   }
 
-  // --- Designer: Click-based ---
+  // --- Designer: Toolbar (click to select, click + to place) ---
   selectedTool = signal<StepType | null>(null);
-  movingNodeIndex = signal<number | null>(null);
 
   selectTool(type: StepType) {
-    this.movingNodeIndex.set(null);
     this.selectedTool.set(this.selectedTool() === type ? null : type);
   }
 
   cancelTool() {
     this.selectedTool.set(null);
-    this.movingNodeIndex.set(null);
-  }
-
-  startMove(event: Event, index: number) {
-    event.stopPropagation();
-    this.selectedTool.set(null);
-    this.movingNodeIndex.set(index);
   }
 
   onSlotClick(targetIndex: number) {
+    if (this.isDragging()) return;
     if (this.selectedTool()) {
       this.svc.insertStepAt(targetIndex, this.selectedTool()!);
       this.selectedTool.set(null);
-    } else if (this.movingNodeIndex() !== null) {
-      const from = this.movingNodeIndex()!;
-      if (from !== targetIndex && from !== targetIndex - 1) {
-        this.svc.moveStep(from, targetIndex);
-      }
-      this.movingNodeIndex.set(null);
     } else {
       this.svc.insertStepAt(targetIndex);
     }
@@ -669,6 +650,66 @@ export class ProcessOverviewComponent {
   deleteStep(event: Event, stepId: string) {
     event.stopPropagation();
     this.svc.deleteStep(stepId);
+  }
+
+  // --- Drag & Drop via pointer events ---
+  isDragging = signal(false);
+  dragSourceIndex = signal<number | null>(null);
+  dropTargetIndex = signal<number | null>(null);
+  ghostX = signal(0);
+  ghostY = signal(0);
+  private boundMouseMove: ((e: MouseEvent) => void) | null = null;
+  private boundMouseUp: ((e: MouseEvent) => void) | null = null;
+
+  onDragStart(event: MouseEvent, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragSourceIndex.set(index);
+    this.ghostX.set(event.clientX);
+    this.ghostY.set(event.clientY);
+
+    this.boundMouseMove = (e: MouseEvent) => {
+      if (!this.isDragging()) {
+        const dx = Math.abs(e.clientX - event.clientX);
+        const dy = Math.abs(e.clientY - event.clientY);
+        if (dx + dy > 5) this.isDragging.set(true);
+        return;
+      }
+      this.ghostX.set(e.clientX);
+      this.ghostY.set(e.clientY);
+    };
+
+    this.boundMouseUp = (_e: MouseEvent) => {
+      document.removeEventListener('mousemove', this.boundMouseMove!);
+      document.removeEventListener('mouseup', this.boundMouseUp!);
+
+      if (this.isDragging() && this.dropTargetIndex() !== null) {
+        const from = this.dragSourceIndex()!;
+        const to = this.dropTargetIndex()!;
+        if (from !== to && from !== to - 1) {
+          this.svc.moveStep(from, to);
+        }
+      }
+
+      this.isDragging.set(false);
+      this.dragSourceIndex.set(null);
+      this.dropTargetIndex.set(null);
+    };
+
+    document.addEventListener('mousemove', this.boundMouseMove);
+    document.addEventListener('mouseup', this.boundMouseUp);
+  }
+
+  onDropZoneEnter(index: number) {
+    if (this.isDragging()) {
+      this.dropTargetIndex.set(index);
+    }
+  }
+
+  onDropZoneLeave() {
+    if (this.isDragging()) {
+      this.dropTargetIndex.set(null);
+    }
   }
 
   cycleStepType(event: Event, step: ProcessStep) {
