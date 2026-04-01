@@ -16,14 +16,13 @@ interface AiMessage {
   template: `
     <!-- Toggle button -->
     <button class="ai-toggle" [class.open]="isOpen()" (click)="isOpen.set(!isOpen())">
-      <i class="material-icons">{{ isOpen() ? 'close' : 'auto_awesome' }}</i>
-      @if (!isOpen()) { <span>KI+</span> }
+      @if (isOpen()) { <i class="material-icons">close</i> } @else { <img src="https://cmi.ch/wp-content/uploads/2025/07/CMI_KI-plus_Logo.webp" class="ki-logo" alt="KI+" /> }
     </button>
 
     @if (isOpen()) {
       <div class="ai-panel">
         <div class="ai-header">
-          <i class="material-icons ai-header-icon">auto_awesome</i>
+          <img src="https://cmi.ch/wp-content/uploads/2025/07/CMI_KI-plus_Logo.webp" class="ki-logo" alt="KI+" />
           <span>KI+ Workflow-Assistent</span>
         </div>
 
@@ -45,7 +44,7 @@ interface AiMessage {
           @for (msg of messages(); track $index) {
             <div class="ai-msg" [class]="msg.role">
               @if (msg.role === 'ai') {
-                <div class="ai-avatar"><i class="material-icons">auto_awesome</i></div>
+                <div class="ai-avatar"><img src="https://cmi.ch/wp-content/uploads/2025/07/CMI_KI-plus_Logo.webp" class="ki-logo" alt="KI+" /></div>
               }
               <div class="ai-msg-content">
                 <div class="ai-msg-text" [innerHTML]="msg.text"></div>
@@ -67,7 +66,7 @@ interface AiMessage {
           }
           @if (isTyping()) {
             <div class="ai-msg ai">
-              <div class="ai-avatar"><i class="material-icons">auto_awesome</i></div>
+              <div class="ai-avatar"><img src="https://cmi.ch/wp-content/uploads/2025/07/CMI_KI-plus_Logo.webp" class="ki-logo" alt="KI+" /></div>
               <div class="ai-msg-content">
                 <div class="ai-typing"><span></span><span></span><span></span></div>
               </div>
@@ -98,6 +97,7 @@ interface AiMessage {
     .ai-toggle:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(124,58,237,0.5); }
     .ai-toggle.open { border-radius: 50%; padding: 10px; }
     .ai-toggle .material-icons { font-size: 22px; }
+    .ai-toggle .ki-logo { height: 22px; width: auto; filter: brightness(0) invert(1); }
 
     .ai-panel {
       position: absolute; bottom: 56px; right: 0; width: 420px; max-height: 600px;
@@ -111,6 +111,7 @@ interface AiMessage {
       font-size: 14px; font-weight: 500;
     }
     .ai-header-icon { font-size: 20px; }
+    .ai-header .ki-logo { height: 20px; width: auto; filter: brightness(0) invert(1); }
 
     .ai-actions { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #ebebed; flex-wrap: wrap; }
     .ai-action-btn {
@@ -134,6 +135,7 @@ interface AiMessage {
       display: flex; align-items: center; justify-content: center;
     }
     .ai-avatar .material-icons { font-size: 16px; }
+    .ai-avatar .ki-logo { height: 16px; width: auto; filter: brightness(0) invert(1); }
     .ai-msg-content { max-width: 85%; }
     .ai-msg-text {
       padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5;
