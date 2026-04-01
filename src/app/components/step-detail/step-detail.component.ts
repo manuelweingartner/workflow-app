@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
-import { ContextObject, TabType } from '../../models/process.model';
+import { ContextObject, TabType, ProcessStep, StepType } from '../../models/process.model';
 
 @Component({
   selector: 'app-step-detail',
@@ -45,6 +45,112 @@ import { ContextObject, TabType } from '../../models/process.model';
             @if (step.completedDate) { <p class="detail-date completed">&#9989; Abgeschlossen: {{ step.completedDate }}</p> }
           }
         </div>
+
+        <!-- Schritttyp -->
+        @if (step.status !== 'completed') {
+          <section class="section">
+            <h3>Schritttyp</h3>
+            <div class="type-selector">
+              <button class="type-btn" [class.active]="!step.stepType || step.stepType === 'standard'" (click)="setStepType(step.id, undefined)">
+                <i class="material-icons">radio_button_checked</i> Standard
+              </button>
+              <button class="type-btn decision" [class.active]="step.stepType === 'decision'" (click)="setStepType(step.id, 'decision')">
+                <i class="material-icons">call_split</i> Entscheidung
+              </button>
+              <button class="type-btn parallel" [class.active]="step.stepType === 'parallel'" (click)="setStepType(step.id, 'parallel')">
+                <i class="material-icons">sync</i> Parallel
+              </button>
+              <button class="type-btn subprocess" [class.active]="step.stepType === 'subprocess'" (click)="setStepType(step.id, 'subprocess')">
+                <i class="material-icons">layers</i> Sub-Prozess
+              </button>
+            </div>
+          </section>
+        } @else if (step.stepType && step.stepType !== 'standard') {
+          <div class="type-badge-display" [class]="step.stepType">
+            @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> Entscheidung }
+            @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> Parallel }
+            @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> Sub-Prozess }
+          </div>
+        }
+
+        <!-- Decision: Branches -->
+        @if (step.stepType === 'decision') {
+          <section class="section">
+            <h3>
+              Verzweigungen
+              <span class="count">{{ step.branches?.length || 0 }}</span>
+              @if (step.status !== 'completed') {
+                <button class="add-btn" (click)="addBranch(step.id)">+ Pfad</button>
+              }
+            </h3>
+            @for (branch of step.branches || []; track branch.id) {
+              <div class="branch-edit-item">
+                <div class="branch-edit-color"></div>
+                <div class="branch-edit-fields">
+                  <input type="text" [value]="branch.label" (change)="updateBranch(step.id, branch.id, 'label', $event)" placeholder="Label (z.B. Bewilligt)" class="branch-input" />
+                  <input type="text" [value]="branch.condition" (change)="updateBranch(step.id, branch.id, 'condition', $event)" placeholder="Bedingung" class="branch-input small" />
+                  <select (change)="updateBranchTarget(step.id, branch.id, $event)">
+                    <option value="">— Ziel wählen —</option>
+                    @for (s of svc.steps(); track s.id) {
+                      <option [value]="s.id" [selected]="branch.targetStepIds[0] === s.id">{{ s.number }} {{ s.title }}</option>
+                    }
+                  </select>
+                </div>
+                @if (step.status !== 'completed') {
+                  <button class="remove-btn" (click)="removeBranch(step.id, branch.id)">&#10005;</button>
+                }
+              </div>
+            }
+          </section>
+        }
+
+        <!-- Parallel: Paths -->
+        @if (step.stepType === 'parallel') {
+          <section class="section">
+            <h3>
+              Parallele Pfade
+              <span class="count">{{ step.parallelPaths?.length || 0 }}</span>
+              @if (step.status !== 'completed') {
+                <button class="add-btn" (click)="addParallelPath(step.id)">+ Pfad</button>
+              }
+            </h3>
+            @for (path of step.parallelPaths || []; track $index; let pi = $index) {
+              @for (ps of path; track ps.id) {
+                <div class="parallel-edit-item">
+                  <div class="ps-dot" [class]="ps.status"></div>
+                  <input type="text" [value]="ps.title" (change)="updateParallelStepTitle(step.id, pi, ps.id, $event)" class="branch-input" />
+                  <input type="text" [value]="ps.responsible" (change)="updateParallelStepResp(step.id, pi, ps.id, $event)" placeholder="Verantwortlich" class="branch-input small" />
+                  @if (step.status !== 'completed') {
+                    <button class="remove-btn" (click)="removeParallelPath(step.id, pi)">&#10005;</button>
+                  }
+                </div>
+              }
+            }
+          </section>
+        }
+
+        <!-- Subprocess: Sub-Steps -->
+        @if (step.stepType === 'subprocess') {
+          <section class="section">
+            <h3>
+              Sub-Schritte
+              <span class="count">{{ step.subSteps?.length || 0 }}</span>
+              @if (step.status !== 'completed') {
+                <button class="add-btn" (click)="addSubStep(step.id)">+ Sub-Schritt</button>
+              }
+            </h3>
+            @for (sub of step.subSteps || []; track sub.id; let si = $index) {
+              <div class="substep-edit-item">
+                <span class="substep-edit-num">{{ si + 1 }}.</span>
+                <input type="text" [value]="sub.title" (change)="updateSubStepTitle(step.id, si, $event)" class="branch-input" />
+                <input type="text" [value]="sub.responsible" (change)="updateSubStepResp(step.id, si, $event)" placeholder="Verantwortlich" class="branch-input small" />
+                @if (step.status !== 'completed') {
+                  <button class="remove-btn" (click)="removeSubStep(step.id, si)">&#10005;</button>
+                }
+              </div>
+            }
+          </section>
+        }
 
         <!-- Kontextobjekte -->
         @if (svc.getContextsForStep(step.id).length) {
@@ -452,6 +558,59 @@ import { ContextObject, TabType } from '../../models/process.model';
     .ctx-type-badge.sitzung { background: #f3e8ff; color: #7c3aed; }
     .ctx-type-badge.projekt { background: #eef7ea; color: #3f971a; }
     .ctx-type-badge.andere { background: #f4f5f6; color: #6c7e93; }
+    /* Step type selector */
+    .type-selector { display: flex; gap: 6px; flex-wrap: wrap; }
+    .type-btn {
+      display: flex; align-items: center; gap: 4px; padding: 6px 12px;
+      background: white; border: 1px solid #bdbdbd; border-radius: 6px;
+      font-size: 12px; color: #586475; cursor: pointer; font-family: inherit;
+      transition: all 0.15s;
+    }
+    .type-btn .material-icons { font-size: 16px; }
+    .type-btn:hover { border-color: #009fe3; background: #f4f5f6; }
+    .type-btn.active { border-width: 2px; font-weight: 500; background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .type-btn.decision.active { background: #fef9e7; border-color: #f59e0b; color: #f59e0b; }
+    .type-btn.parallel.active { background: #f9f5ff; border-color: #7c3aed; color: #7c3aed; }
+    .type-btn.subprocess.active { background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .type-badge-display {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px;
+      border-radius: 6px; font-size: 12px; margin-bottom: 12px;
+    }
+    .type-badge-display .material-icons { font-size: 16px; }
+    .type-badge-display.decision { background: #fef9e7; color: #f59e0b; }
+    .type-badge-display.parallel { background: #f9f5ff; color: #7c3aed; }
+    .type-badge-display.subprocess { background: #e6f4fd; color: #009fe3; }
+
+    /* Branch editing */
+    .branch-edit-item {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ebebed;
+    }
+    .branch-edit-color { width: 4px; height: 32px; background: #f59e0b; border-radius: 2px; flex-shrink: 0; }
+    .branch-edit-fields { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .branch-input {
+      padding: 5px 8px; border: 1px solid #bdbdbd; border-radius: 4px;
+      font-size: 13px; font-family: inherit; flex: 1; min-width: 100px;
+    }
+    .branch-input.small { flex: 0.6; min-width: 80px; }
+    .branch-input:focus { outline: none; border-color: #009fe3; }
+    .branch-edit-fields select {
+      padding: 5px 8px; border: 1px solid #bdbdbd; border-radius: 4px;
+      font-size: 13px; font-family: inherit; flex: 1; min-width: 140px;
+    }
+
+    /* Parallel editing */
+    .parallel-edit-item {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ebebed;
+    }
+    .ps-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .ps-dot.completed { background: #3f971a; } .ps-dot.in-progress { background: #009fe3; } .ps-dot.pending { background: #bdbdbd; }
+
+    /* Substep editing */
+    .substep-edit-item {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ebebed;
+    }
+    .substep-edit-num { font-size: 13px; font-weight: 500; color: #586475; min-width: 20px; }
+
     .context-item.clickable { cursor: pointer; transition: background 0.15s; }
     .context-item.clickable:hover { background: #f4f5f6; }
     .ctx-info { flex: 1; display: flex; flex-direction: column; }
@@ -524,5 +683,126 @@ export class StepDetailComponent {
 
   openContext(ctx: ContextObject) {
     this.svc.openTab(ctx.type as TabType, ctx.id);
+  }
+
+  // --- Step type ---
+  setStepType(stepId: string, type: StepType | undefined) {
+    this.svc.updateStepField(stepId, { stepType: type } as Partial<ProcessStep>);
+  }
+
+  // --- Branches (Decision) ---
+  addBranch(stepId: string) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    if (!updated.branches) updated.branches = [];
+    updated.branches.push({
+      id: crypto.randomUUID(), label: '', condition: '', targetStepIds: [],
+    });
+    this.svc.updateStep(updated);
+  }
+
+  removeBranch(stepId: string, branchId: string) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    updated.branches = updated.branches?.filter(b => b.id !== branchId);
+    this.svc.updateStep(updated);
+  }
+
+  updateBranch(stepId: string, branchId: string, field: 'label' | 'condition', event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    const branch = updated.branches?.find(b => b.id === branchId);
+    if (branch) { branch[field] = val; this.svc.updateStep(updated); }
+  }
+
+  updateBranchTarget(stepId: string, branchId: string, event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    const branch = updated.branches?.find(b => b.id === branchId);
+    if (branch) { branch.targetStepIds = val ? [val] : []; this.svc.updateStep(updated); }
+  }
+
+  // --- Parallel Paths ---
+  addParallelPath(stepId: string) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    if (!updated.parallelPaths) updated.parallelPaths = [];
+    updated.parallelPaths.push([{
+      id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Pfad', status: 'pending',
+      responsible: '', category: '', contextLinks: [], tasks: [], inputs: [], actions: [],
+      completionCriteria: [], conditionals: [],
+    }]);
+    this.svc.updateStep(updated);
+  }
+
+  removeParallelPath(stepId: string, pathIndex: number) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    updated.parallelPaths?.splice(pathIndex, 1);
+    this.svc.updateStep(updated);
+  }
+
+  updateParallelStepTitle(stepId: string, pi: number, psId: string, event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    const ps = updated.parallelPaths?.[pi]?.find(p => p.id === psId);
+    if (ps) { ps.title = val; this.svc.updateStep(updated); }
+  }
+
+  updateParallelStepResp(stepId: string, pi: number, psId: string, event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    const ps = updated.parallelPaths?.[pi]?.find(p => p.id === psId);
+    if (ps) { ps.responsible = val; this.svc.updateStep(updated); }
+  }
+
+  // --- Sub-Steps (Subprocess) ---
+  addSubStep(stepId: string) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    if (!updated.subSteps) updated.subSteps = [];
+    updated.subSteps.push({
+      id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Sub-Schritt', status: 'pending',
+      responsible: '', category: '', contextLinks: [], tasks: [], inputs: [], actions: [],
+      completionCriteria: [], conditionals: [],
+    });
+    this.svc.updateStep(updated);
+  }
+
+  removeSubStep(stepId: string, index: number) {
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    updated.subSteps?.splice(index, 1);
+    this.svc.updateStep(updated);
+  }
+
+  updateSubStepTitle(stepId: string, index: number, event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    if (updated.subSteps?.[index]) { updated.subSteps[index].title = val; this.svc.updateStep(updated); }
+  }
+
+  updateSubStepResp(stepId: string, index: number, event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    const step = this.svc.steps().find(s => s.id === stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    if (updated.subSteps?.[index]) { updated.subSteps[index].responsible = val; this.svc.updateStep(updated); }
   }
 }
