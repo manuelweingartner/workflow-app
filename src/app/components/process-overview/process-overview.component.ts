@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, viewChild, ElementRef } from '@angular/core';
 import { ProcessService } from '../../services/process.service';
 import { ProcessStep, StepType } from '../../models/process.model';
 
@@ -652,12 +652,13 @@ export class ProcessOverviewComponent {
     this.svc.deleteStep(stepId);
   }
 
-  // --- Drag & Drop via pointer events ---
+  // --- Drag & Drop via pointer events + position-based drop detection ---
   isDragging = signal(false);
   dragSourceIndex = signal<number | null>(null);
   dropTargetIndex = signal<number | null>(null);
   ghostX = signal(0);
   ghostY = signal(0);
+  flowchartEl = viewChild<ElementRef<HTMLElement>>('flowchartEl');
   private boundMouseMove: ((e: MouseEvent) => void) | null = null;
   private boundMouseUp: ((e: MouseEvent) => void) | null = null;
 
@@ -668,18 +669,22 @@ export class ProcessOverviewComponent {
     this.ghostX.set(event.clientX);
     this.ghostY.set(event.clientY);
 
+    const startX = event.clientX;
+    const startY = event.clientY;
+
     this.boundMouseMove = (e: MouseEvent) => {
       if (!this.isDragging()) {
-        const dx = Math.abs(e.clientX - event.clientX);
-        const dy = Math.abs(e.clientY - event.clientY);
-        if (dx + dy > 5) this.isDragging.set(true);
+        if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 5) {
+          this.isDragging.set(true);
+        }
         return;
       }
       this.ghostX.set(e.clientX);
       this.ghostY.set(e.clientY);
+      this.detectDropTarget(e.clientY);
     };
 
-    this.boundMouseUp = (_e: MouseEvent) => {
+    this.boundMouseUp = () => {
       document.removeEventListener('mousemove', this.boundMouseMove!);
       document.removeEventListener('mouseup', this.boundMouseUp!);
 
@@ -700,17 +705,22 @@ export class ProcessOverviewComponent {
     document.addEventListener('mouseup', this.boundMouseUp);
   }
 
-  onDropZoneEnter(index: number) {
-    if (this.isDragging()) {
-      this.dropTargetIndex.set(index);
+  private detectDropTarget(mouseY: number) {
+    const el = this.flowchartEl()?.nativeElement;
+    if (!el) return;
+    const nodes = el.querySelectorAll('.fc-node-wrapper');
+    let bestIndex = 0;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const rect = nodes[i].getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (mouseY > midY) bestIndex = i + 1;
     }
+    this.dropTargetIndex.set(bestIndex);
   }
 
-  onDropZoneLeave() {
-    if (this.isDragging()) {
-      this.dropTargetIndex.set(null);
-    }
-  }
+  onDropZoneEnter(_index: number) {}
+  onDropZoneLeave() {}
 
   cycleStepType(event: Event, step: ProcessStep) {
     event.stopPropagation();
