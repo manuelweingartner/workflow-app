@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
-import { ContextObject, TabType, ProcessStep, StepType } from '../../models/process.model';
+import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode } from '../../models/process.model';
 
 @Component({
   selector: 'app-step-detail',
@@ -46,35 +46,100 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
           }
         </div>
 
-        <!-- Schritttyp -->
+        <!-- Schritttyp / Gateway-Typ -->
         @if (step.status !== 'completed') {
           <section class="section">
-            <h3>Schritttyp</h3>
-            <div class="type-selector">
-              <button class="type-btn" [class.active]="!step.stepType || step.stepType === 'standard'" (click)="setStepType(step.id, undefined)">
-                <i class="material-icons">radio_button_checked</i> Standard
-              </button>
-              <button class="type-btn decision" [class.active]="step.stepType === 'decision'" (click)="setStepType(step.id, 'decision')">
-                <i class="material-icons">call_split</i> Entscheidung
-              </button>
-              <button class="type-btn parallel" [class.active]="step.stepType === 'parallel'" (click)="setStepType(step.id, 'parallel')">
-                <i class="material-icons">sync</i> Parallel
-              </button>
-              <button class="type-btn subprocess" [class.active]="step.stepType === 'subprocess'" (click)="setStepType(step.id, 'subprocess')">
-                <i class="material-icons">layers</i> Sub-Prozess
-              </button>
-            </div>
+            @if (step.kind === 'gateway') {
+              <h3>Gateway-Typ</h3>
+              <div class="type-selector">
+                <button class="type-btn decision" [class.active]="step.gatewayType === 'decision'"
+                        (click)="setGatewayType(step.id, 'decision')">
+                  <i class="material-icons">call_split</i> Entscheidung
+                </button>
+                <button class="type-btn parallel" [class.active]="step.gatewayType === 'parallel'"
+                        (click)="setGatewayType(step.id, 'parallel')">
+                  <i class="material-icons">fork_right</i> Parallel
+                </button>
+                <button class="type-btn loop" [class.active]="step.gatewayType === 'loop'"
+                        (click)="setGatewayType(step.id, 'loop')">
+                  <i class="material-icons">replay</i> Schleife
+                </button>
+              </div>
+            } @else {
+              <h3>Schritttyp</h3>
+              <div class="type-selector">
+                <button class="type-btn task" [class.active]="!step.stepType || step.stepType === 'task'"
+                        (click)="setStepType(step.id, 'task')">
+                  <i class="material-icons">assignment</i> Aufgabe
+                </button>
+                <button class="type-btn activity" [class.active]="step.stepType === 'activity'"
+                        (click)="setStepType(step.id, 'activity')">
+                  <i class="material-icons">bolt</i> Aktivität
+                </button>
+                <button class="type-btn subprocess" [class.active]="step.stepType === 'subprocess'"
+                        (click)="setStepType(step.id, 'subprocess')">
+                  <i class="material-icons">layers</i> Sub-Prozess
+                </button>
+              </div>
+              @if (!step.stepType || step.stepType === 'task') {
+                <div class="subtype-row">
+                  <label class="subtype-label">Modus</label>
+                  <div class="toggle-group">
+                    <button class="toggle-tab" [class.active]="!step.taskMode || step.taskMode === 'description'"
+                            (click)="setTaskMode(step.id, 'description')">
+                      <i class="material-icons">description</i> Beschreibung
+                    </button>
+                    <button class="toggle-tab" [class.active]="step.taskMode === 'wizard'"
+                            (click)="setTaskMode(step.id, 'wizard')">
+                      <i class="material-icons">smart_button</i> Assistent
+                    </button>
+                  </div>
+                </div>
+              }
+              @if (step.stepType === 'activity') {
+                <div class="subtype-row">
+                  <label class="subtype-label">Art der Automatisierung</label>
+                  <div class="activity-grid">
+                    <button class="activity-kind-btn" [class.active]="step.activityKind === 'object-creation'"
+                            (click)="setActivityKind(step.id, 'object-creation')">
+                      <i class="material-icons">add_box</i> Objekt
+                    </button>
+                    <button class="activity-kind-btn" [class.active]="step.activityKind === 'interface'"
+                            (click)="setActivityKind(step.id, 'interface')">
+                      <i class="material-icons">cable</i> Schnittstelle
+                    </button>
+                    <button class="activity-kind-btn" [class.active]="step.activityKind === 'ai'"
+                            (click)="setActivityKind(step.id, 'ai')">
+                      <i class="material-icons">psychology</i> KI
+                    </button>
+                    <button class="activity-kind-btn" [class.active]="step.activityKind === 'notification'"
+                            (click)="setActivityKind(step.id, 'notification')">
+                      <i class="material-icons">notifications</i> Nachricht
+                    </button>
+                    <button class="activity-kind-btn" [class.active]="step.activityKind === 'document'"
+                            (click)="setActivityKind(step.id, 'document')">
+                      <i class="material-icons">picture_as_pdf</i> Dokument
+                    </button>
+                  </div>
+                </div>
+              }
+            }
           </section>
-        } @else if (step.stepType && step.stepType !== 'standard') {
+        } @else if (step.kind === 'gateway') {
+          <div class="type-badge-display" [class]="step.gatewayType">
+            @if (step.gatewayType === 'decision') { <i class="material-icons">call_split</i> Entscheidung }
+            @else if (step.gatewayType === 'parallel') { <i class="material-icons">fork_right</i> Parallel }
+            @else if (step.gatewayType === 'loop') { <i class="material-icons">replay</i> Schleife }
+          </div>
+        } @else if (step.stepType && step.stepType !== 'task') {
           <div class="type-badge-display" [class]="step.stepType">
-            @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> Entscheidung }
-            @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> Parallel }
+            @if (step.stepType === 'activity') { <i class="material-icons">bolt</i> Aktivität }
             @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> Sub-Prozess }
           </div>
         }
 
         <!-- Decision: Branches -->
-        @if (step.stepType === 'decision') {
+        @if (step.gatewayType === 'decision') {
           <section class="section">
             <h3>
               Verzweigungen
@@ -89,12 +154,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
                 <div class="branch-edit-fields">
                   <input type="text" [value]="branch.label" (change)="updateBranch(step.id, branch.id, 'label', $event)" placeholder="Label (z.B. Bewilligt)" class="branch-input" />
                   <input type="text" [value]="branch.condition" (change)="updateBranch(step.id, branch.id, 'condition', $event)" placeholder="Bedingung" class="branch-input small" />
-                  <select (change)="updateBranchTarget(step.id, branch.id, $event)">
-                    <option value="">— Ziel wählen —</option>
-                    @for (s of svc.steps(); track s.id) {
-                      <option [value]="s.id" [selected]="branch.targetStepIds[0] === s.id">{{ s.number }} {{ s.title }}</option>
-                    }
-                  </select>
+                  <span class="branch-step-count">{{ branch.steps.length }} Schritt(e) — im Diagramm bearbeiten</span>
                 </div>
                 @if (step.status !== 'completed') {
                   <button class="remove-btn" (click)="removeBranch(step.id, branch.id)">&#10005;</button>
@@ -105,7 +165,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
         }
 
         <!-- Parallel: Paths -->
-        @if (step.stepType === 'parallel') {
+        @if (step.gatewayType === 'parallel') {
           <section class="section">
             <h3>
               Parallele Pfade
@@ -115,17 +175,34 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
               }
             </h3>
             @for (path of step.parallelPaths || []; track $index; let pi = $index) {
-              @for (ps of path; track ps.id) {
-                <div class="parallel-edit-item">
-                  <div class="ps-dot" [class]="ps.status"></div>
-                  <input type="text" [value]="ps.title" (change)="updateParallelStepTitle(step.id, pi, ps.id, $event)" class="branch-input" />
-                  <input type="text" [value]="ps.responsible" (change)="updateParallelStepResp(step.id, pi, ps.id, $event)" placeholder="Verantwortlich" class="branch-input small" />
-                  @if (step.status !== 'completed') {
-                    <button class="remove-btn" (click)="removeParallelPath(step.id, pi)">&#10005;</button>
-                  }
-                </div>
-              }
+              <div class="parallel-edit-item">
+                <div class="ps-dot" [class]="path[0]?.status || 'pending'"></div>
+                <input type="text" [value]="path[0]?.title || ''"
+                       (change)="updateParallelStepTitle(step.id, pi, path[0]?.id ?? '', $event)"
+                       class="branch-input" [placeholder]="'Pfad ' + (pi + 1)" />
+                <span class="branch-step-count">{{ path.length }} Schritt(e)</span>
+                @if (step.status !== 'completed') {
+                  <button class="remove-btn" (click)="removeParallelPath(step.id, pi)">&#10005;</button>
+                }
+              </div>
             }
+          </section>
+        }
+
+        <!-- Loop: Configuration -->
+        @if (step.gatewayType === 'loop') {
+          <section class="section">
+            <h3>Schleife</h3>
+            <div class="edit-row">
+              <label>Bedingung</label>
+              <input type="text" [ngModel]="step.loopCondition || ''"
+                     (ngModelChange)="svc.updateStepField(step.id, { loopCondition: $event })"
+                     placeholder="Bedingung für Wiederholung" />
+            </div>
+            <div class="edit-row" style="margin-top:8px">
+              <label>Schleifenkörper</label>
+              <span class="branch-step-count">{{ step.loopBody?.length || 0 }} Schritt(e) — im Diagramm bearbeiten</span>
+            </div>
           </section>
         }
 
@@ -152,6 +229,8 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
           </section>
         }
 
+        @if (step.kind !== 'gateway') {
+
         <!-- Kontextobjekte -->
         @if (svc.getContextsForStep(step.id).length) {
           <section class="section">
@@ -171,7 +250,8 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
           </section>
         }
 
-        <!-- Aufgaben -->
+        <!-- Aufgaben — hidden for automated activities -->
+        @if (step.stepType !== 'activity') {
         <section class="section">
           <h3>
             Aufgaben
@@ -212,6 +292,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
             </div>
           }
         </section>
+        } <!-- end @if stepType !== 'activity' -->
 
         <!-- Inputs -->
         @if (step.inputs.length) {
@@ -271,7 +352,8 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
           </section>
         }
 
-        <!-- Abschlusskriterien -->
+        <!-- Abschlusskriterien — hidden for automated activities -->
+        @if (step.stepType !== 'activity') {
         <section class="section">
           <h3>
             Abschlusskriterien
@@ -325,6 +407,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
             </div>
           }
         </section>
+        } <!-- end @if stepType !== 'activity' -->
 
         <!-- Conditionals -->
         @if (step.conditionals.length) {
@@ -365,6 +448,8 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
             <div class="pending-hint">Dieser Schritt ist noch nicht aktiv. Er wird gestartet, sobald der vorherige Schritt abgeschlossen ist.</div>
           </div>
         }
+
+        } <!-- end @if kind !== gateway -->
       </div>
     } @else {
       <div class="empty-state">
@@ -558,7 +643,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
     .ctx-type-badge.sitzung { background: #f3e8ff; color: #7c3aed; }
     .ctx-type-badge.projekt { background: #eef7ea; color: #3f971a; }
     .ctx-type-badge.andere { background: #f4f5f6; color: #6c7e93; }
-    /* Step type selector */
+    /* Step / gateway type selector */
     .type-selector { display: flex; gap: 6px; flex-wrap: wrap; }
     .type-btn {
       display: flex; align-items: center; gap: 4px; padding: 6px 12px;
@@ -568,10 +653,13 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
     }
     .type-btn .material-icons { font-size: 16px; }
     .type-btn:hover { border-color: #009fe3; background: #f4f5f6; }
-    .type-btn.active { border-width: 2px; font-weight: 500; background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .type-btn.active { border-width: 2px; font-weight: 500; }
+    .type-btn.task.active { background: #f4f5f6; border-color: #586475; color: #353c46; }
+    .type-btn.activity.active { background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .type-btn.subprocess.active { background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
     .type-btn.decision.active { background: #fef9e7; border-color: #f59e0b; color: #f59e0b; }
     .type-btn.parallel.active { background: #f9f5ff; border-color: #7c3aed; color: #7c3aed; }
-    .type-btn.subprocess.active { background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .type-btn.loop.active { background: #fff7ed; border-color: #f97316; color: #f97316; }
     .type-badge-display {
       display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px;
       border-radius: 6px; font-size: 12px; margin-bottom: 12px;
@@ -579,7 +667,32 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
     .type-badge-display .material-icons { font-size: 16px; }
     .type-badge-display.decision { background: #fef9e7; color: #f59e0b; }
     .type-badge-display.parallel { background: #f9f5ff; color: #7c3aed; }
+    .type-badge-display.loop { background: #fff7ed; color: #f97316; }
     .type-badge-display.subprocess { background: #e6f4fd; color: #009fe3; }
+    .type-badge-display.activity { background: #e6f4fd; color: #009fe3; }
+
+    /* Subtype selectors (taskMode, activityKind) */
+    .subtype-row { margin-top: 10px; }
+    .subtype-label { display: block; font-size: 11px; color: #6c7e93; margin-bottom: 6px; }
+    .toggle-group { display: flex; border: 1px solid #bdbdbd; border-radius: 6px; overflow: hidden; width: fit-content; }
+    .toggle-tab {
+      display: flex; align-items: center; gap: 4px; padding: 5px 12px;
+      background: white; border: none; font-size: 12px; color: #586475;
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    }
+    .toggle-tab .material-icons { font-size: 15px; }
+    .toggle-tab:not(:last-child) { border-right: 1px solid #bdbdbd; }
+    .toggle-tab.active { background: #009fe3; color: white; font-weight: 500; }
+    .activity-grid { display: flex; gap: 6px; flex-wrap: wrap; }
+    .activity-kind-btn {
+      display: flex; align-items: center; gap: 4px; padding: 5px 10px;
+      background: white; border: 1px solid #bdbdbd; border-radius: 6px;
+      font-size: 11px; color: #586475; cursor: pointer; font-family: inherit;
+      transition: all 0.15s;
+    }
+    .activity-kind-btn .material-icons { font-size: 15px; }
+    .activity-kind-btn:hover { border-color: #009fe3; background: #e6f4fd; }
+    .activity-kind-btn.active { background: #e6f4fd; border-color: #009fe3; border-width: 2px; color: #009fe3; font-weight: 500; }
 
     /* Branch editing */
     .branch-edit-item {
@@ -593,6 +706,7 @@ import { ContextObject, TabType, ProcessStep, StepType } from '../../models/proc
     }
     .branch-input.small { flex: 0.6; min-width: 80px; }
     .branch-input:focus { outline: none; border-color: #009fe3; }
+    .branch-step-count { font-size: 12px; color: #6c7e93; font-style: italic; }
     .branch-edit-fields select {
       padding: 5px 8px; border: 1px solid #bdbdbd; border-radius: 4px;
       font-size: 13px; font-family: inherit; flex: 1; min-width: 140px;
@@ -685,26 +799,36 @@ export class StepDetailComponent {
     this.svc.openTab(ctx.type as TabType, ctx.id);
   }
 
-  // --- Step type ---
-  setStepType(stepId: string, type: StepType | undefined) {
+  // --- Step / gateway type ---
+  setStepType(stepId: string, type: StepType) {
     this.svc.updateStepField(stepId, { stepType: type } as Partial<ProcessStep>);
+  }
+
+  setGatewayType(stepId: string, type: GatewayType) {
+    this.svc.updateStepField(stepId, { gatewayType: type } as Partial<ProcessStep>);
+  }
+
+  setTaskMode(stepId: string, mode: TaskMode) {
+    this.svc.updateStepField(stepId, { taskMode: mode } as Partial<ProcessStep>);
+  }
+
+  setActivityKind(stepId: string, kind: ActivityKind) {
+    this.svc.updateStepField(stepId, { activityKind: kind } as Partial<ProcessStep>);
   }
 
   // --- Branches (Decision) ---
   addBranch(stepId: string) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (!updated.branches) updated.branches = [];
-    updated.branches.push({
-      id: crypto.randomUUID(), label: '', condition: '', targetStepIds: [],
-    });
+    updated.branches.push({ id: crypto.randomUUID(), label: '', condition: '', steps: [] });
     this.svc.updateStep(updated);
   }
 
   removeBranch(stepId: string, branchId: string) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     updated.branches = updated.branches?.filter(b => b.id !== branchId);
     this.svc.updateStep(updated);
@@ -712,26 +836,17 @@ export class StepDetailComponent {
 
   updateBranch(stepId: string, branchId: string, field: 'label' | 'condition', event: Event) {
     const val = (event.target as HTMLInputElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     const branch = updated.branches?.find(b => b.id === branchId);
     if (branch) { branch[field] = val; this.svc.updateStep(updated); }
   }
 
-  updateBranchTarget(stepId: string, branchId: string, event: Event) {
-    const val = (event.target as HTMLSelectElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
-    const updated = structuredClone(step);
-    const branch = updated.branches?.find(b => b.id === branchId);
-    if (branch) { branch.targetStepIds = val ? [val] : []; this.svc.updateStep(updated); }
-  }
-
   // --- Parallel Paths ---
   addParallelPath(stepId: string) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (!updated.parallelPaths) updated.parallelPaths = [];
     updated.parallelPaths.push([{
@@ -743,8 +858,8 @@ export class StepDetailComponent {
   }
 
   removeParallelPath(stepId: string, pathIndex: number) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     updated.parallelPaths?.splice(pathIndex, 1);
     this.svc.updateStep(updated);
@@ -752,8 +867,8 @@ export class StepDetailComponent {
 
   updateParallelStepTitle(stepId: string, pi: number, psId: string, event: Event) {
     const val = (event.target as HTMLInputElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     const ps = updated.parallelPaths?.[pi]?.find(p => p.id === psId);
     if (ps) { ps.title = val; this.svc.updateStep(updated); }
@@ -761,8 +876,8 @@ export class StepDetailComponent {
 
   updateParallelStepResp(stepId: string, pi: number, psId: string, event: Event) {
     const val = (event.target as HTMLInputElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     const ps = updated.parallelPaths?.[pi]?.find(p => p.id === psId);
     if (ps) { ps.responsible = val; this.svc.updateStep(updated); }
@@ -770,8 +885,8 @@ export class StepDetailComponent {
 
   // --- Sub-Steps (Subprocess) ---
   addSubStep(stepId: string) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (!updated.subSteps) updated.subSteps = [];
     updated.subSteps.push({
@@ -783,8 +898,8 @@ export class StepDetailComponent {
   }
 
   removeSubStep(stepId: string, index: number) {
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     updated.subSteps?.splice(index, 1);
     this.svc.updateStep(updated);
@@ -792,16 +907,16 @@ export class StepDetailComponent {
 
   updateSubStepTitle(stepId: string, index: number, event: Event) {
     const val = (event.target as HTMLInputElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (updated.subSteps?.[index]) { updated.subSteps[index].title = val; this.svc.updateStep(updated); }
   }
 
   updateSubStepResp(stepId: string, index: number, event: Event) {
     const val = (event.target as HTMLInputElement).value;
-    const step = this.svc.steps().find(s => s.id === stepId);
-    if (!step) return;
+    const step = this.svc.selectedStep();
+    if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (updated.subSteps?.[index]) { updated.subSteps[index].responsible = val; this.svc.updateStep(updated); }
   }

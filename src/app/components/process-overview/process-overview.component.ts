@@ -1,21 +1,28 @@
-import { Component, inject, signal, viewChild, ElementRef } from '@angular/core';
+import { Component, inject, signal, viewChild, ElementRef, HostListener } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { ProcessService } from '../../services/process.service';
-import { ProcessStep, StepType } from '../../models/process.model';
+import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
 
 @Component({
   selector: 'app-process-overview',
   standalone: true,
+  imports: [NgTemplateOutlet],
   template: `
-    <div class="overview">
+    <div class="overview" [class.fullscreen]="fullscreen()">
       <div class="overview-header">
         <div class="overview-title-row">
           <h2>Prozessübersicht</h2>
-          <div class="view-toggle">
-            <button class="toggle-btn" [class.active]="viewMode() === 'sequence'" (click)="viewMode.set('sequence')" title="Sequenz">
-              <i class="material-icons">view_list</i>
-            </button>
-            <button class="toggle-btn" [class.active]="viewMode() === 'flowchart'" (click)="viewMode.set('flowchart')" title="Flowchart">
-              <i class="material-icons">account_tree</i>
+          <div class="header-controls">
+            <div class="view-toggle">
+              <button class="toggle-btn" [class.active]="viewMode() === 'sequence'" (click)="viewMode.set('sequence')" title="Sequenz">
+                <i class="material-icons">view_list</i>
+              </button>
+              <button class="toggle-btn" [class.active]="viewMode() === 'flowchart'" (click)="viewMode.set('flowchart')" title="Flowchart">
+                <i class="material-icons">account_tree</i>
+              </button>
+            </div>
+            <button class="fs-btn" (click)="fullscreen.set(!fullscreen())" [title]="fullscreen() ? 'Vollbild beenden' : 'Vollbild'">
+              <i class="material-icons">{{ fullscreen() ? 'fullscreen_exit' : 'fullscreen' }}</i>
             </button>
           </div>
         </div>
@@ -45,169 +52,477 @@ import { ProcessStep, StepType } from '../../models/process.model';
           <span class="legend-item"><span class="dot completed"></span> Abgeschlossen</span>
           <span class="legend-item"><span class="dot in-progress"></span> In Bearbeitung</span>
           <span class="legend-item"><span class="dot pending"></span> Ausstehend</span>
-          <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#f59e0b">call_split</i></span> Entscheidung</span>
-          <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#7c3aed">sync</i></span> Parallel</span>
+          <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#009fe3">bolt</i></span> Aktivität</span>
+          <span class="legend-item"><span class="gw-dot decision"></span> Entscheidung</span>
+          <span class="legend-item"><span class="gw-dot parallel"></span> Parallel</span>
+          <span class="legend-item"><span class="gw-dot loop"></span> Schleife</span>
         </div>
       </div>
+
+    <!-- ===== RECURSIVE TEMPLATE: sequence lane steps ===== -->
+    <ng-template #seqLaneSteps let-steps="steps" let-gwId="gwId" let-branchId="branchId" let-pathIdx="pathIdx" let-isLoop="isLoop">
+      @for (bs of steps; track bs.id) {
+        @if (bs.kind === 'gateway') {
+          <!-- Nested gateway — same gw-section look as top-level, fills lane width -->
+          <div class="gw-section nested" [class]="bs.gatewayType">
+            <div class="gw-header" [class.selected]="bs.id === svc.selectedStep()?.id"
+                 (click)="svc.selectStep(bs.id); $event.stopPropagation()">
+              <span class="gw-type-tag" [class]="bs.gatewayType">
+                @if (bs.gatewayType === 'decision') {
+                  <svg width="10" height="10" viewBox="0 0 20 20"><polygon points="10,1 19,10 10,19 1,10" fill="currentColor"/></svg>
+                  Entscheidung
+                } @else if (bs.gatewayType === 'parallel') {
+                  <i class="material-icons" style="font-size:10px;vertical-align:middle">fork_right</i> Parallel
+                } @else {
+                  <i class="material-icons" style="font-size:10px;vertical-align:middle">replay</i> Schleife
+                }
+              </span>
+              @if (bs.title) { <span class="gw-title">{{ bs.title }}</span> }
+              <button class="gw-collapse-btn" (click)="toggleCollapse($event, bs)">
+                <i class="material-icons">{{ bs.collapsed ? 'expand_more' : 'expand_less' }}</i>
+              </button>
+            </div>
+            @if (!bs.collapsed) {
+              @if (bs.gatewayType === 'decision' && bs.branches?.length) {
+                <div class="gw-lanes">
+                  @for (sub of bs.branches; track sub.id) {
+                    <div class="gw-lane decision">
+                      <div class="gw-lane-hdr">
+                        <span class="gw-lane-label">{{ sub.label }}</span>
+                        <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
+                          <i class="material-icons">add</i>
+                        </button>
+                      </div>
+                      @if (!sub.steps.length) { <div class="lane-empty">Kein Schritt</div> }
+                      <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                        [ngTemplateOutletContext]="{ steps: sub.steps, gwId: bs.id, branchId: sub.id, pathIdx: null, isLoop: false }">
+                      </ng-template>
+                    </div>
+                  }
+                </div>
+                <div class="gw-join-bar decision"></div>
+              }
+              @if (bs.gatewayType === 'parallel' && bs.parallelPaths?.length) {
+                <div class="gw-lanes">
+                  @for (sub of bs.parallelPaths; track $index; let pi = $index) {
+                    <div class="gw-lane parallel">
+                      <div class="gw-lane-hdr">
+                        <span class="gw-lane-label">Pfad {{ pi + 1 }}</span>
+                        <button class="lane-add-btn" (click)="addNodeToParallelPath($event, bs.id, pi)" title="Hinzufügen">
+                          <i class="material-icons">add</i>
+                        </button>
+                      </div>
+                      @if (!sub.length) { <div class="lane-empty">Kein Schritt</div> }
+                      <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                        [ngTemplateOutletContext]="{ steps: sub, gwId: bs.id, branchId: null, pathIdx: pi, isLoop: false }">
+                      </ng-template>
+                    </div>
+                  }
+                </div>
+                <div class="gw-join-bar parallel"></div>
+              }
+              @if (bs.gatewayType === 'loop') {
+                <div class="loop-body-container">
+                  <div class="loop-body-header">
+                    <i class="material-icons">replay</i>
+                    <span>{{ bs.loopCondition || 'Schleife' }}</span>
+                    <button class="lane-add-btn" (click)="addNodeToLoopBody($event, bs.id)" title="Hinzufügen">
+                      <i class="material-icons">add</i>
+                    </button>
+                  </div>
+                  @if (!bs.loopBody?.length) { <div class="lane-empty">Schleifenkörper leer</div> }
+                  <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                    [ngTemplateOutletContext]="{ steps: bs.loopBody ?? [], gwId: bs.id, branchId: null, pathIdx: null, isLoop: true }">
+                  </ng-template>
+                </div>
+              }
+            }
+          </div>
+        } @else {
+          <!-- Full step-row style inside the lane -->
+          <div class="swim-step" [class.selected]="bs.id === svc.selectedStep()?.id"
+               [class.activity-step]="bs.stepType === 'activity'"
+               (click)="svc.selectStep(bs.id); $event.stopPropagation()">
+            <div class="swim-step-icon">
+              @if (bs.stepType === 'activity') {
+                <svg width="16" height="16" viewBox="0 0 20 20">
+                  @if (bs.status === 'completed') {
+                    <circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/>
+                  } @else if (bs.status === 'in-progress') {
+                    <circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2" stroke-dasharray="4 2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/>
+                  } @else {
+                    <circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2" stroke-dasharray="4 2"/>
+                  }
+                </svg>
+              } @else if (bs.status === 'completed') {
+                <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
+              } @else if (bs.status === 'in-progress') {
+                <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
+              } @else {
+                <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
+              }
+            </div>
+            <div class="swim-step-body">
+              <div class="swim-step-title-row">
+                @if (bs.number) { <span class="step-number">{{ bs.number }}</span> }
+                <span class="swim-step-title">{{ bs.title }}</span>
+                @if (bs.stepType === 'activity') {
+                  <span class="step-type-chip activity"><i class="material-icons" style="font-size:9px">bolt</i></span>
+                }
+              </div>
+              @if (bs.responsible) {
+                <div class="swim-step-meta">&#128100; {{ bs.responsible }}</div>
+              }
+            </div>
+            <span class="swim-step-status" [class]="bs.status">{{ statusLabel(bs.status) }}</span>
+          </div>
+        }
+      }
+    </ng-template>
+
+    <!-- ===== RECURSIVE TEMPLATE: flowchart lane content ===== -->
+    <ng-template #fcLaneContent let-steps="steps" let-gwId="gwId" let-branchId="branchId" let-pathIdx="pathIdx" let-isLoop="isLoop">
+      <div class="fc-inner-drop" [class.active]="selectedTool()"
+           (click)="onInnerSlotClick(0, gwId, branchId, pathIdx, isLoop)">
+        <div class="fc-drop-line"></div>
+        @if (selectedTool()) { <i class="material-icons fc-drop-plus">add</i> }
+      </div>
+      @for (bs of steps; track bs.id; let bsIdx = $index) {
+        <div class="fc-inner-node" [class.selected]="bs.id === svc.selectedStep()?.id"
+             [class.gateway]="bs.kind === 'gateway'"
+             [class.decision]="bs.gatewayType === 'decision'"
+             [class.parallel]="bs.gatewayType === 'parallel'"
+             [class.loop]="bs.gatewayType === 'loop'"
+             [class.activity]="bs.stepType === 'activity'"
+             [class.completed]="bs.status === 'completed'"
+             (click)="svc.selectStep(bs.id); $event.stopPropagation()">
+          <div class="fc-inner-icon">
+            @if (bs.kind === 'gateway') {
+              @if (bs.gatewayType === 'decision') { <i class="material-icons">call_split</i> }
+              @else if (bs.gatewayType === 'parallel') { <i class="material-icons">fork_right</i> }
+              @else { <i class="material-icons">replay</i> }
+            } @else {
+              @if (bs.stepType === 'activity') { <i class="material-icons">bolt</i> }
+              @else if (bs.stepType === 'subprocess') { <i class="material-icons">layers</i> }
+              @else { <i class="material-icons">assignment</i> }
+            }
+          </div>
+          <span class="fc-inner-title">{{ bs.title }}</span>
+          @if (bs.kind === 'gateway') {
+            <button class="gateway-collapse-btn" (click)="toggleCollapse($event, bs)">
+              <i class="material-icons">{{ bs.collapsed ? 'expand_more' : 'expand_less' }}</i>
+            </button>
+          }
+          <div class="fc-inner-status" [class]="bs.status"></div>
+          <button class="fc-node-delete" title="Löschen" (click)="deleteStep($event, bs.id)">
+            <i class="material-icons">close</i>
+          </button>
+        </div>
+        @if (bs.kind === 'gateway' && !bs.collapsed) {
+          @if (bs.gatewayType === 'decision' && bs.branches?.length) {
+            <div class="fc-inner-lanes">
+              @for (sub of bs.branches; track sub.id) {
+                <div class="fc-inner-lane decision">
+                  <div class="fc-inner-lane-hdr">
+                    <span>{{ sub.label }}</span>
+                    <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
+                      <i class="material-icons">add</i>
+                    </button>
+                  </div>
+                  <ng-template [ngTemplateOutlet]="fcLaneContent"
+                    [ngTemplateOutletContext]="{ steps: sub.steps, gwId: bs.id, branchId: sub.id, pathIdx: null, isLoop: false }">
+                  </ng-template>
+                </div>
+              }
+            </div>
+          }
+          @if (bs.gatewayType === 'parallel' && bs.parallelPaths?.length) {
+            <div class="fc-inner-lanes">
+              @for (sub of bs.parallelPaths; track $index; let pi = $index) {
+                <div class="fc-inner-lane parallel">
+                  <div class="fc-inner-lane-hdr">
+                    <span>Pfad {{ pi + 1 }}</span>
+                    <button class="lane-add-btn" (click)="addNodeToParallelPath($event, bs.id, pi)" title="Hinzufügen">
+                      <i class="material-icons">add</i>
+                    </button>
+                  </div>
+                  <ng-template [ngTemplateOutlet]="fcLaneContent"
+                    [ngTemplateOutletContext]="{ steps: sub, gwId: bs.id, branchId: null, pathIdx: pi, isLoop: false }">
+                  </ng-template>
+                </div>
+              }
+            </div>
+          }
+          @if (bs.gatewayType === 'loop') {
+            <div class="fc-inner-loop-body">
+              <div class="fc-inner-lane-hdr loop">
+                <i class="material-icons">replay</i>
+                <span>{{ bs.loopCondition || 'Schleife' }}</span>
+                <button class="lane-add-btn" (click)="addNodeToLoopBody($event, bs.id)" title="Hinzufügen">
+                  <i class="material-icons">add</i>
+                </button>
+              </div>
+              <ng-template [ngTemplateOutlet]="fcLaneContent"
+                [ngTemplateOutletContext]="{ steps: bs.loopBody ?? [], gwId: bs.id, branchId: null, pathIdx: null, isLoop: true }">
+              </ng-template>
+            </div>
+          }
+        }
+        <div class="fc-inner-drop" [class.active]="selectedTool()"
+             (click)="onInnerSlotClick(bsIdx + 1, gwId, branchId, pathIdx, isLoop)">
+          <div class="fc-drop-line"></div>
+          @if (selectedTool()) { <i class="material-icons fc-drop-plus">add</i> }
+        </div>
+      }
+    </ng-template>
 
       @if (viewMode() === 'sequence') {
         <!-- SEQUENCE VIEW -->
         <div class="steps-list">
+          <!-- Start node -->
+          <div class="se-node">
+            <div class="step-status-col">
+              <svg width="20" height="20" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="8" fill="none" stroke="#3f971a" stroke-width="2"/>
+              </svg>
+              <div class="connector-line completed"></div>
+            </div>
+            <span class="se-label">Start</span>
+          </div>
+
           @for (step of svc.steps(); track step.id; let last = $last) {
             <ng-container>
-              <!-- Step type badge -->
-              @if (step.stepType === 'decision' || step.stepType === 'parallel' || step.stepType === 'subprocess') {
-                <div class="step-type-indicator" [class]="step.stepType">
-                  <button class="collapse-btn" (click)="toggleCollapse($event, step)">
-                    <i class="material-icons">{{ step.collapsed ? 'add' : 'remove' }}</i>
-                  </button>
-                  @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> Entscheidung }
-                  @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> Parallel }
-                  @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> Sub-Prozess }
-                </div>
-              }
 
-              <!-- Main step row -->
-              <div class="step-row" [class.selected]="step.id === svc.selectedStep()?.id" [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
-                   [class.decision]="step.stepType === 'decision'" [class.parallel-step]="step.stepType === 'parallel'" [class.subprocess-step]="step.stepType === 'subprocess'"
-                   (click)="svc.selectStep(step.id)">
-                <div class="step-status-col">
-                  <div class="status-icon" [class]="step.status">
-                    @if (step.stepType === 'decision') {
-                      <svg width="20" height="20" viewBox="0 0 20 20"><polygon points="10,1 19,10 10,19 1,10" fill="none" stroke="#f59e0b" stroke-width="1.5"/><text x="10" y="14" text-anchor="middle" font-size="10" fill="#f59e0b">?</text></svg>
-                    } @else if (step.status === 'completed') {
-                      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
-                    } @else if (step.status === 'in-progress') {
-                      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
-                    } @else {
-                      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
-                    }
+              @if (step.kind === 'gateway') {
+                <!-- ===== GATEWAY SECTION (branch-first, no box) ===== -->
+                <div class="gw-section" [class]="step.gatewayType">
+                  <!-- Thin header: type pill + title + collapse — not a hoverable box -->
+                  <div class="gw-header" [class.selected]="step.id === svc.selectedStep()?.id"
+                       (click)="svc.selectStep(step.id)">
+                    <span class="gw-type-tag" [class]="step.gatewayType">
+                      @if (step.gatewayType === 'decision') {
+                        <svg width="12" height="12" viewBox="0 0 20 20" style="vertical-align:middle"><polygon points="10,1 19,10 10,19 1,10" fill="currentColor"/></svg>
+                        Entscheidung
+                      } @else if (step.gatewayType === 'parallel') {
+                        <i class="material-icons" style="font-size:12px;vertical-align:middle">fork_right</i> Parallel
+                      } @else {
+                        <i class="material-icons" style="font-size:12px;vertical-align:middle">replay</i> Schleife
+                      }
+                    </span>
+                    @if (step.title) { <span class="gw-title">{{ step.title }}</span> }
+                    <button class="gw-collapse-btn" (click)="toggleCollapse($event, step)">
+                      <i class="material-icons">{{ step.collapsed ? 'expand_more' : 'expand_less' }}</i>
+                    </button>
                   </div>
-                  @if (!last) {
-                    <div class="connector-line" [class]="step.status"></div>
+                  @if (!step.collapsed) {
+                    @if (step.gatewayType === 'decision' && step.branches?.length) {
+                      <div class="gw-lanes">
+                        @for (branch of step.branches; track branch.id) {
+                          <div class="gw-lane decision">
+                            <div class="gw-lane-hdr">
+                              <span class="gw-lane-label">{{ branch.label }}</span>
+                              @if (branch.condition) { <span class="gw-lane-cond">{{ branch.condition }}</span> }
+                              <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
+                                <i class="material-icons">add</i>
+                              </button>
+                            </div>
+                            @if (!branch.steps.length) { <div class="lane-empty">Kein Schritt</div> }
+                            <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                              [ngTemplateOutletContext]="{ steps: branch.steps, gwId: step.id, branchId: branch.id, pathIdx: null, isLoop: false }">
+                            </ng-template>
+                          </div>
+                        }
+                      </div>
+                      <div class="gw-join-bar decision"></div>
+                    }
+                    @if (step.gatewayType === 'parallel' && step.parallelPaths?.length) {
+                      <div class="gw-lanes">
+                        @for (path of step.parallelPaths; track $index; let pi = $index) {
+                          <div class="gw-lane parallel">
+                            <div class="gw-lane-hdr">
+                              <span class="gw-lane-label">Pfad {{ pi + 1 }}</span>
+                              <button class="lane-add-btn" (click)="addNodeToParallelPath($event, step.id, pi)" title="Hinzufügen">
+                                <i class="material-icons">add</i>
+                              </button>
+                            </div>
+                            @if (!path.length) { <div class="lane-empty">Kein Schritt</div> }
+                            <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                              [ngTemplateOutletContext]="{ steps: path, gwId: step.id, branchId: null, pathIdx: pi, isLoop: false }">
+                            </ng-template>
+                          </div>
+                        }
+                      </div>
+                      <div class="gw-join-bar parallel"></div>
+                    }
+                    @if (step.gatewayType === 'loop') {
+                      <div class="loop-body-container">
+                        <div class="loop-body-header">
+                          <i class="material-icons">replay</i>
+                          <span>{{ step.loopCondition || 'Schleife' }}</span>
+                          <button class="lane-add-btn" (click)="addNodeToLoopBody($event, step.id)" title="Hinzufügen">
+                            <i class="material-icons">add</i>
+                          </button>
+                        </div>
+                        @if (!step.loopBody?.length) { <div class="lane-empty">Schleifenkörper leer</div> }
+                        <ng-template [ngTemplateOutlet]="seqLaneSteps"
+                          [ngTemplateOutletContext]="{ steps: step.loopBody ?? [], gwId: step.id, branchId: null, pathIdx: null, isLoop: true }">
+                        </ng-template>
+                        <div class="loop-back-arrow">&#8634; zurück zum Anfang</div>
+                      </div>
+                    }
                   }
                 </div>
-                <div class="step-content">
-                  <div class="step-title-row">
-                    <span class="step-number">{{ step.number }}</span>
-                    <span class="step-title">{{ step.title }}</span>
+
+              } @else {
+                <!-- ===== STEP NODE (actual work) ===== -->
+
+                <!-- Sub-process header (collapsed sub-steps toggle) -->
+                @if (step.stepType === 'subprocess') {
+                  <div class="step-type-indicator subprocess">
+                    <button class="collapse-btn" (click)="toggleCollapse($event, step)">
+                      <i class="material-icons">{{ step.collapsed ? 'add' : 'remove' }}</i>
+                    </button>
+                    <i class="material-icons">layers</i> Sub-Prozess
                   </div>
-                  <div class="step-meta">
-                    @if (step.completedDate) {
-                      <span class="meta-item">&#128197; {{ step.completedDate }}</span>
-                    } @else if (step.dueDate) {
-                      <span class="meta-item due">&#128197; Fällig {{ step.dueDate }}</span>
-                    }
-                    <span class="meta-item">&#128100; {{ step.responsible }}</span>
+                }
+
+                <!-- Main step row -->
+                <div class="step-row"
+                     [class.selected]="step.id === svc.selectedStep()?.id"
+                     [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
+                     [class.subprocess-step]="step.stepType === 'subprocess'"
+                     [class.activity-step]="step.stepType === 'activity'"
+                     (click)="svc.selectStep(step.id)">
+                  <div class="step-status-col">
+                    <div class="status-icon" [class]="step.status">
+                      @if (step.stepType === 'activity') {
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                          @if (step.status === 'completed') {
+                            <circle cx="10" cy="10" r="9" fill="#3f971a"/>
+                            <path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/>
+                          } @else if (step.status === 'in-progress') {
+                            <circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2" stroke-dasharray="4 2"/>
+                            <circle cx="10" cy="10" r="4" fill="#009fe3"/>
+                          } @else {
+                            <circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2" stroke-dasharray="4 2"/>
+                          }
+                        </svg>
+                      } @else if (step.status === 'completed') {
+                        <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
+                      } @else if (step.status === 'in-progress') {
+                        <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
+                      } @else {
+                        <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
+                      }
+                    </div>
+                    <div class="connector-line" [class]="step.status"></div>
                   </div>
-                  @if (svc.getContextsForStep(step.id).length > 1 || !svc.isStepLinkedToContext(step.id)) {
-                    <div class="step-contexts">
-                      @for (ctx of svc.getContextsForStep(step.id); track ctx.id) {
-                        <span class="context-badge" [class]="ctx.type">
-                          @if (ctx.type === 'sitzung') { &#128197; } @else { &#128193; }
-                          {{ ctx.number }}
+                  <div class="step-content">
+                    <div class="step-title-row">
+                      @if (step.number) { <span class="step-number">{{ step.number }}</span> }
+                      <span class="step-title">{{ step.title }}</span>
+                      @if (step.stepType === 'activity') {
+                        <span class="step-type-chip activity">
+                          <i class="material-icons" style="font-size:11px">bolt</i>
+                          @if (step.activityKind === 'ai') { KI }
+                          @else if (step.activityKind === 'object-creation') { Objekt }
+                          @else if (step.activityKind === 'interface') { Schnittstelle }
+                          @else if (step.activityKind === 'notification') { Benachrichtigung }
+                          @else if (step.activityKind === 'document') { Dokument }
+                          @else { Automatisch }
                         </span>
                       }
                     </div>
-                  }
-                </div>
-                <div class="step-status-label" [class]="step.status">
-                  {{ statusLabel(step.status) }}
-                </div>
-              </div>
-
-              <!-- Branches (for decision steps) -->
-              @if (step.stepType === 'decision' && step.branches?.length && !step.collapsed) {
-                <div class="branches-container">
-                  @for (branch of step.branches; track branch.id) {
-                    <div class="branch-line">
-                      <div class="branch-connector"></div>
-                      <span class="branch-label" [class.loop-back]="isLoopBack(step, branch)">
-                        @if (isLoopBack(step, branch)) { &#8634; }
-                        {{ branch.label }}
-                      </span>
-                      <span class="branch-target">&#8594; {{ getStepTitle(branch.targetStepIds[0]) }}</span>
+                    <div class="step-meta">
+                      @if (step.completedDate) {
+                        <span class="meta-item">&#128197; {{ step.completedDate }}</span>
+                      } @else if (step.dueDate) {
+                        <span class="meta-item due">&#128197; Fällig {{ step.dueDate }}</span>
+                      }
+                      @if (step.responsible) {
+                        <span class="meta-item">&#128100; {{ step.responsible }}</span>
+                      }
                     </div>
-                  }
-                </div>
-              }
-
-              <!-- Parallel paths -->
-              @if (step.stepType === 'parallel' && step.parallelPaths?.length && !step.collapsed) {
-                <div class="parallel-container">
-                  <div class="parallel-bar start">&#9552; parallel start</div>
-                  <div class="parallel-paths">
-                    @for (path of step.parallelPaths; track $index) {
-                      <div class="parallel-path">
-                        @for (ps of path; track ps.id) {
-                          <div class="parallel-step-card" [class]="ps.status" (click)="svc.selectStep(step.id)">
-                            <div class="ps-status-dot" [class]="ps.status"></div>
-                            <div class="ps-info">
-                              <span class="ps-title">{{ ps.title }}</span>
-                              <span class="ps-responsible">{{ ps.responsible }}</span>
-                            </div>
-                          </div>
+                    @if (svc.getContextsForStep(step.id).length > 1 || !svc.isStepLinkedToContext(step.id)) {
+                      <div class="step-contexts">
+                        @for (ctx of svc.getContextsForStep(step.id); track ctx.id) {
+                          <span class="context-badge" [class]="ctx.type">
+                            @if (ctx.type === 'sitzung') { &#128197; } @else { &#128193; }
+                            {{ ctx.number }}
+                          </span>
                         }
                       </div>
                     }
                   </div>
-                  <div class="parallel-bar end">&#9552; parallel ende</div>
+                  <div class="step-status-label" [class]="step.status">
+                    {{ statusLabel(step.status) }}
+                  </div>
                 </div>
-              }
 
-              <!-- Sub-steps (for subprocess) -->
-              @if (step.stepType === 'subprocess' && step.subSteps?.length && !step.collapsed) {
-                <div class="substeps-container">
-                  @for (sub of step.subSteps; track sub.id; let subLast = $last) {
-                    <div class="substep-row" [class]="sub.status">
-                      <div class="substep-connector">
-                        <div class="substep-dot" [class]="sub.status"></div>
-                        @if (!subLast) { <div class="substep-line"></div> }
+                <!-- Sub-steps expansion (for subprocess) -->
+                @if (step.stepType === 'subprocess' && step.subSteps?.length && !step.collapsed) {
+                  <div class="substeps-container">
+                    @for (sub of step.subSteps; track sub.id; let subLast = $last) {
+                      <div class="substep-row" [class]="sub.status">
+                        <div class="substep-connector">
+                          <div class="substep-dot" [class]="sub.status"></div>
+                          @if (!subLast) { <div class="substep-line"></div> }
+                        </div>
+                        <div class="substep-info">
+                          <span class="substep-title">{{ sub.title }}</span>
+                          <span class="substep-responsible">{{ sub.responsible }}</span>
+                        </div>
+                        <span class="substep-status" [class]="sub.status">{{ statusLabel(sub.status) }}</span>
                       </div>
-                      <div class="substep-info">
-                        <span class="substep-title">{{ sub.title }}</span>
-                        <span class="substep-responsible">{{ sub.responsible }}</span>
-                      </div>
-                      <span class="substep-status" [class]="sub.status">{{ statusLabel(sub.status) }}</span>
-                    </div>
-                  }
-                </div>
-              }
+                    }
+                  </div>
+                }
 
-              <!-- Loop indicator -->
-              @if (step.loopBackToStepId && !step.collapsed) {
-                <div class="loop-indicator">
-                  <span class="loop-arrow">&#8634;</span>
-                  <span class="loop-text">Schleife: {{ step.loopCondition }}</span>
-                </div>
-              }
-
-              <!-- Insert button -->
-              @if (svc.canInsertAfter(step.id)) {
-                <div class="insert-row">
-                  <button class="insert-btn" title="Schritt einfügen" (click)="onInsert($event, step.id)">
-                    <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#009fe3" stroke-width="1.5"/><path d="M8 4v8M4 8h8" stroke="#009fe3" stroke-width="1.5"/></svg>
-                  </button>
-                </div>
+                <!-- Insert button -->
+                @if (svc.canInsertAfter(step.id)) {
+                  <div class="insert-row">
+                    <button class="insert-btn" title="Schritt einfügen" (click)="onInsert($event, step.id)">
+                      <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#009fe3" stroke-width="1.5"/><path d="M8 4v8M4 8h8" stroke="#009fe3" stroke-width="1.5"/></svg>
+                    </button>
+                  </div>
+                }
               }
             </ng-container>
           }
+
+          <!-- End node -->
+          <div class="se-node">
+            <div class="step-status-col">
+              <svg width="20" height="20" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="9" fill="none" stroke="#353c46" stroke-width="3"/>
+              </svg>
+            </div>
+            <span class="se-label">Ende</span>
+          </div>
         </div>
       } @else {
         <!-- FLOWCHART DESIGNER -->
         <div class="fc-toolbar">
-          <span class="fc-toolbar-label">Einfügen:</span>
-          <button class="fc-tool-btn" [class.active]="selectedTool() === 'standard'" (click)="selectTool('standard')">
-            <i class="material-icons">radio_button_checked</i> Schritt
+          <span class="fc-toolbar-label">Schritte:</span>
+          <button class="fc-tool-btn task" [class.active]="selectedTool() === 'task'" (click)="selectTool('task')">
+            <i class="material-icons">assignment</i> Aufgabe
           </button>
+          <button class="fc-tool-btn activity" [class.active]="selectedTool() === 'activity'" (click)="selectTool('activity')">
+            <i class="material-icons">bolt</i> Aktivität
+          </button>
+          <button class="fc-tool-btn subprocess" [class.active]="selectedTool() === 'subprocess'" (click)="selectTool('subprocess')">
+            <i class="material-icons">layers</i> Sub-Prozess
+          </button>
+          <span class="fc-toolbar-divider"></span>
+          <span class="fc-toolbar-label">Gateways:</span>
           <button class="fc-tool-btn decision" [class.active]="selectedTool() === 'decision'" (click)="selectTool('decision')">
             <i class="material-icons">call_split</i> Entscheidung
           </button>
           <button class="fc-tool-btn parallel" [class.active]="selectedTool() === 'parallel'" (click)="selectTool('parallel')">
-            <i class="material-icons">sync</i> Parallel
+            <i class="material-icons">fork_right</i> Parallel
           </button>
-          <button class="fc-tool-btn subprocess" [class.active]="selectedTool() === 'subprocess'" (click)="selectTool('subprocess')">
-            <i class="material-icons">layers</i> Sub-Prozess
+          <button class="fc-tool-btn loop" [class.active]="selectedTool() === 'loop'" (click)="selectTool('loop')">
+            <i class="material-icons">replay</i> Schleife
           </button>
           @if (selectedTool()) {
             <button class="fc-tool-btn cancel" (click)="cancelTool()">
@@ -223,6 +538,15 @@ import { ProcessStep, StepType } from '../../models/process.model';
         }
 
         <div class="flowchart" #flowchartEl>
+          <!-- Start node -->
+          <div class="fc-se-node start">
+            <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#3f971a" stroke-width="2"/></svg>
+            Start
+          </div>
+          <div class="fc-arrow-row">
+            <svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 4v14M6 14l6 6 6-6" stroke="#bdbdbd" stroke-width="1.5" fill="none"/></svg>
+          </div>
+
           <!-- Drop zone at top -->
           <div class="fc-drop-zone" [class.active]="isDragging() || selectedTool()" [class.highlight]="dropTargetIndex() === 0"
                (mouseenter)="onDropZoneEnter(0)" (mouseleave)="onDropZoneLeave()" (click)="onSlotClick(0)">
@@ -232,7 +556,16 @@ import { ProcessStep, StepType } from '../../models/process.model';
 
           @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
             <div class="fc-node-wrapper" [class.dragging]="dragSourceIndex() === idx">
-              <div class="fc-node" [class]="(step.stepType || 'standard') + ' ' + step.status"
+              <div class="fc-node"
+                   [class.gateway]="step.kind === 'gateway'"
+                   [class.decision]="step.gatewayType === 'decision'"
+                   [class.parallel]="step.gatewayType === 'parallel'"
+                   [class.loop-gw]="step.gatewayType === 'loop'"
+                   [class.task]="step.stepType === 'task'"
+                   [class.activity]="step.stepType === 'activity'"
+                   [class.subprocess]="step.stepType === 'subprocess'"
+                   [class.completed]="step.status === 'completed'"
+                   [class.in-progress]="step.status === 'in-progress'"
                    [class.selected]="step.id === svc.selectedStep()?.id"
                    [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
                    (click)="svc.selectStep(step.id)">
@@ -240,56 +573,91 @@ import { ProcessStep, StepType } from '../../models/process.model';
                 <div class="fc-drag-handle" (mousedown)="onDragStart($event, idx)">
                   <i class="material-icons">drag_indicator</i>
                 </div>
-                <div class="fc-node-icon" title="Typ wechseln" (click)="cycleStepType($event, step)">
-                  @if (step.stepType === 'decision') { <i class="material-icons">call_split</i> }
-                  @else if (step.stepType === 'parallel') { <i class="material-icons">sync</i> }
-                  @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> }
-                  @else { <i class="material-icons">radio_button_checked</i> }
+                <div class="fc-node-icon" title="Typ wechseln" (click)="cycleNodeType($event, step)">
+                  @if (step.kind === 'gateway') {
+                    @if (step.gatewayType === 'decision') { <i class="material-icons">call_split</i> }
+                    @else if (step.gatewayType === 'parallel') { <i class="material-icons">fork_right</i> }
+                    @else if (step.gatewayType === 'loop') { <i class="material-icons">replay</i> }
+                  } @else {
+                    @if (step.stepType === 'activity') { <i class="material-icons">bolt</i> }
+                    @else if (step.stepType === 'subprocess') { <i class="material-icons">layers</i> }
+                    @else { <i class="material-icons">assignment</i> }
+                  }
                 </div>
                 <div class="fc-node-body">
                   <span class="fc-node-number">{{ step.number }}</span>
                   <span class="fc-node-title">{{ step.title }}</span>
                 </div>
                 <div class="fc-node-status" [class]="step.status"></div>
+                @if (step.kind === 'gateway') {
+                  <button class="fc-node-collapse" title="Auf-/Zuklappen" (click)="toggleCollapse($event, step)">
+                    <i class="material-icons">{{ step.collapsed ? 'expand_more' : 'expand_less' }}</i>
+                  </button>
+                }
                 <button class="fc-node-delete" title="Löschen" (click)="deleteStep($event, step.id)">
                   <i class="material-icons">close</i>
                 </button>
               </div>
 
-              <!-- Parallel expansion -->
-              @if (step.stepType === 'parallel' && step.parallelPaths?.length) {
-                <div class="fc-parallel">
-                  @for (path of step.parallelPaths; track $index) {
-                    @for (ps of path; track ps.id) {
-                      <div class="fc-parallel-node" [class]="ps.status">
-                        <span class="fc-pn-title">{{ ps.title }}</span>
-                        <span class="fc-pn-status" [class]="ps.status"></span>
+              <!-- Gateway expansion — lane columns -->
+              @if (step.kind === 'gateway' && !step.collapsed) {
+                @if (step.gatewayType === 'decision' && step.branches?.length) {
+                  <div class="fc-branch-lanes">
+                    @for (branch of step.branches; track branch.id) {
+                      <div class="fc-branch-lane decision">
+                        <div class="fc-lane-hdr">
+                          <span class="fc-lane-label">{{ branch.label }}</span>
+                          @if (branch.condition) { <span class="fc-lane-cond">{{ branch.condition }}</span> }
+                          <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
+                            <i class="material-icons">add</i>
+                          </button>
+                        </div>
+                        <ng-template [ngTemplateOutlet]="fcLaneContent"
+                          [ngTemplateOutletContext]="{ steps: branch.steps, gwId: step.id, branchId: branch.id, pathIdx: null, isLoop: false }">
+                        </ng-template>
                       </div>
                     }
-                  }
-                </div>
-              }
-              @if (step.stepType === 'decision' && step.branches?.length) {
-                <div class="fc-branches">
-                  @for (branch of step.branches; track branch.id) {
-                    <div class="fc-branch" [class.loop-back]="isLoopBack(step, branch)">
-                      <span class="fc-branch-label">{{ branch.label }}</span>
-                      <i class="material-icons fc-branch-arrow">{{ isLoopBack(step, branch) ? 'undo' : 'arrow_forward' }}</i>
-                      <span class="fc-branch-target">{{ getStepTitle(branch.targetStepIds[0]) }}</span>
+                  </div>
+                  <div class="fc-lane-join decision"></div>
+                }
+                @if (step.gatewayType === 'parallel' && step.parallelPaths?.length) {
+                  <div class="fc-branch-lanes">
+                    @for (path of step.parallelPaths; track $index; let pi = $index) {
+                      <div class="fc-branch-lane parallel">
+                        <div class="fc-lane-hdr">
+                          <span class="fc-lane-label">Pfad {{ pi + 1 }}</span>
+                          <button class="lane-add-btn" (click)="addNodeToParallelPath($event, step.id, pi)" title="Hinzufügen">
+                            <i class="material-icons">add</i>
+                          </button>
+                        </div>
+                        <ng-template [ngTemplateOutlet]="fcLaneContent"
+                          [ngTemplateOutletContext]="{ steps: path, gwId: step.id, branchId: null, pathIdx: pi, isLoop: false }">
+                        </ng-template>
+                      </div>
+                    }
+                  </div>
+                  <div class="fc-lane-join parallel"></div>
+                }
+                @if (step.gatewayType === 'loop') {
+                  <div class="fc-loop-lane">
+                    <div class="fc-lane-hdr loop">
+                      <i class="material-icons">replay</i>
+                      <span>{{ step.loopCondition || 'Schleife' }}</span>
+                      <button class="lane-add-btn" (click)="addNodeToLoopBody($event, step.id)" title="Hinzufügen">
+                        <i class="material-icons">add</i>
+                      </button>
                     </div>
-                  }
-                </div>
+                    <ng-template [ngTemplateOutlet]="fcLaneContent"
+                      [ngTemplateOutletContext]="{ steps: step.loopBody ?? [], gwId: step.id, branchId: null, pathIdx: null, isLoop: true }">
+                    </ng-template>
+                  </div>
+                }
               }
               @if (step.stepType === 'subprocess' && step.subSteps?.length) {
                 <div class="fc-substeps">
                   @for (sub of step.subSteps; track sub.id) {
                     <div class="fc-subnode" [class]="sub.status">{{ sub.title }}</div>
                   }
-                </div>
-              }
-              @if (step.loopBackToStepId) {
-                <div class="fc-loop">
-                  <i class="material-icons">replay</i> {{ step.loopCondition }}
                 </div>
               }
 
@@ -299,10 +667,17 @@ import { ProcessStep, StepType } from '../../models/process.model';
               </div>
               <div class="fc-drop-zone" [class.active]="isDragging() || selectedTool()" [class.highlight]="dropTargetIndex() === idx + 1"
                    (mouseenter)="onDropZoneEnter(idx + 1)" (mouseleave)="onDropZoneLeave()" (click)="onSlotClick(idx + 1)">
+                @if (selectedTool() && !isDragging()) { <i class="material-icons fc-drop-plus">add_circle</i> }
                 <div class="fc-drop-line"></div>
               </div>
             </div>
           }
+
+          <!-- End node -->
+          <div class="fc-se-node end">
+            <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#353c46" stroke-width="3"/></svg>
+            Ende
+          </div>
         </div>
 
         <!-- Drag ghost -->
@@ -316,14 +691,32 @@ import { ProcessStep, StepType } from '../../models/process.model';
     </div>
   `,
   styles: `
+    :host { display: block; width: 100%; flex-shrink: 0; }
     .overview {
       display: flex; flex-direction: column; height: 100%; overflow-y: auto;
-      padding: 24px; min-width: 380px; max-width: 520px;
+      padding: 24px; min-width: 0; width: 100%;
       border-right: 1px solid rgba(0,0,0,0.12); background: #ffffff;
     }
     .overview-title-row { display: flex; align-items: center; justify-content: space-between; }
     .overview-title-row h2 { margin: 0 0 4px; font-size: 1.375rem; font-weight: 400; color: #353c46; }
     .overview-sub { margin: 0 0 20px; font-size: 0.75rem; color: #6c7e93; }
+
+    /* Fullscreen */
+    .overview.fullscreen {
+      position: fixed; inset: 0; z-index: 999;
+      width: 100vw !important; height: 100vh;
+      border-right: none; border-radius: 0;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+    }
+
+    /* Header controls row */
+    .header-controls { display: flex; align-items: center; gap: 6px; }
+    .fs-btn {
+      background: none; border: 1px solid #bdbdbd; border-radius: 4px;
+      padding: 4px 5px; cursor: pointer; display: flex; align-items: center;
+    }
+    .fs-btn:hover { background: #f4f5f6; }
+    .fs-btn .material-icons { font-size: 18px; color: #6c7e93; }
 
     /* Toggle */
     .view-toggle { display: flex; border: 1px solid #bdbdbd; border-radius: 4px; overflow: hidden; }
@@ -363,6 +756,13 @@ import { ProcessStep, StepType } from '../../models/process.model';
 
     /* Steps list */
     .steps-list { flex: 1; }
+
+    /* Start / End nodes — sequence view */
+    .se-node { display: flex; align-items: flex-start; gap: 12px; padding: 4px 12px; }
+    .se-label {
+      font-size: 11px; font-weight: 600; color: #6c7e93;
+      text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px;
+    }
     .step-row {
       display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px;
       cursor: pointer; border-radius: 8px; transition: background 0.15s;
@@ -397,37 +797,115 @@ import { ProcessStep, StepType } from '../../models/process.model';
     .context-badge.geschaeft { background: #e6f4fd; color: #009fe3; }
     .context-badge.sitzung { background: #f3e8ff; color: #7c3aed; }
 
-    /* Branches */
-    .branches-container { padding: 4px 0 8px 34px; }
-    .branch-line { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; }
-    .branch-connector { width: 16px; height: 2px; background: #f59e0b; }
-    .branch-label {
-      background: #fef9e7; color: #92710c; padding: 1px 8px; border-radius: 8px;
-      font-size: 11px; font-weight: 500; white-space: nowrap;
-    }
-    .branch-label.loop-back { background: #fce8e8; color: #8c0909; }
-    .branch-target { color: #6c7e93; font-size: 11px; }
+    /* ===== Gateway sections — Swimlane design ===== */
 
-    /* Parallel */
-    .parallel-container { padding: 4px 0 8px 20px; }
-    .parallel-bar {
-      font-size: 10px; color: #7c3aed; text-transform: uppercase; padding: 2px 0;
-      border-top: 2px dashed #7c3aed; margin: 4px 0;
+    /* Outer wrapper: full width, minimal margin */
+    .gw-section { margin: 2px 0; }
+
+    /* Thin header: type pill + title + collapse — NOT a box, just a labeled separator */
+    .gw-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 12px; cursor: pointer;
     }
-    .parallel-bar.end { border-top: none; border-bottom: 2px dashed #7c3aed; }
-    .parallel-paths { display: flex; gap: 8px; flex-wrap: wrap; }
-    .parallel-path { flex: 1; min-width: 100px; }
-    .parallel-step-card {
-      display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-      background: #f9f5ff; border: 1px solid #e0d4f5; border-radius: 6px; margin: 4px 0;
+    .gw-header:hover { background: rgba(0,0,0,0.02); }
+    .gw-header.selected { background: #e6f4fd; }
+
+    /* Nested gateway header: even more compact */
+    .gw-section.nested .gw-header { padding: 3px 6px; }
+
+    /* Colored type pill */
+    .gw-type-tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
     }
-    .ps-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .ps-status-dot.completed { background: #3f971a; }
-    .ps-status-dot.in-progress { background: #009fe3; }
-    .ps-status-dot.pending { background: #bdbdbd; }
-    .ps-info { display: flex; flex-direction: column; }
-    .ps-title { font-size: 12px; color: #353c46; }
-    .ps-responsible { font-size: 10px; color: #6c7e93; }
+    .gw-type-tag.decision { background: #fef3c7; color: #92710c; }
+    .gw-type-tag.parallel { background: #ede9fe; color: #6d28d9; }
+    .gw-type-tag.loop { background: #ffedd5; color: #c2410c; }
+
+    /* Optional title */
+    .gw-title { font-size: 0.8125rem; color: #586475; flex: 1; }
+
+    /* Collapse button */
+    .gw-collapse-btn {
+      background: none; border: none; cursor: pointer; padding: 0;
+      display: flex; align-items: center; color: #bdbdbd; margin-left: auto;
+    }
+    .gw-collapse-btn:hover { color: #586475; }
+    .gw-collapse-btn .material-icons { font-size: 18px; }
+    .gw-section.nested .gw-collapse-btn .material-icons { font-size: 14px; }
+
+    /* Swimlane table: column headers + content side by side, no gap between columns */
+    .gw-lanes {
+      display: flex; border: 1px solid #e0e0e0; border-radius: 6px;
+      overflow-x: auto; margin: 0 12px 4px;
+    }
+    .gw-section.nested .gw-lanes { margin: 0 0 3px; }
+
+    /* Individual lane column */
+    .gw-lane {
+      flex: 1; min-width: 160px; display: flex; flex-direction: column;
+      border-right: 1px solid #e0e0e0;
+    }
+    .gw-lane:last-child { border-right: none; }
+    .gw-lane.decision { background: #fffdf5; }
+    .gw-lane.parallel { background: #fdfbff; }
+    /* Nested lanes: smaller min-width so deep nesting stays usable */
+    .gw-section.nested .gw-lane { min-width: 130px; }
+
+    /* Column header (branch label row) */
+    .gw-lane-hdr {
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 8px; border-bottom: 1px solid #e0e0e0; font-size: 11px;
+    }
+    .gw-lane.decision .gw-lane-hdr { background: #fef9e7; }
+    .gw-lane.parallel .gw-lane-hdr { background: #f5f0ff; }
+    .gw-lane-label { font-weight: 600; flex: 1; }
+    .gw-lane-cond { font-size: 10px; color: #6c7e93; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Join bar */
+    .gw-join-bar { height: 2px; margin: 0 12px 4px; }
+    .gw-join-bar.decision { background: #f59e0b; }
+    .gw-join-bar.parallel { background: #7c3aed; }
+    .gw-section.nested .gw-join-bar { margin: 0 0 2px; }
+
+    /* Shared helpers */
+    .lane-add-btn { background: none; border: 1px dashed currentColor; border-radius: 4px; cursor: pointer; padding: 1px 3px; line-height: 1; margin-left: auto; flex-shrink: 0; opacity: 0.6; }
+    .lane-add-btn:hover { opacity: 1; }
+    .lane-add-btn .material-icons { font-size: 13px; }
+    .lane-empty { font-size: 11px; color: #bdbdbd; text-align: center; padding: 8px; }
+
+    /* Steps inside swimlane columns — full step-row look */
+    .swim-step {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 8px; cursor: pointer;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+    .swim-step:last-child { border-bottom: none; }
+    .swim-step:hover { background: rgba(0,159,227,0.04); }
+    .swim-step.selected { background: #e6f4fd; }
+    .swim-step.activity-step { border-left: 2px solid #009fe3; }
+    .swim-step-icon { flex-shrink: 0; margin-top: 1px; }
+    .swim-step-body { flex: 1; min-width: 0; }
+    .swim-step-title-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .swim-step-title { font-size: 12px; color: #353c46; word-break: break-word; }
+    .swim-step-meta { font-size: 10px; color: #6c7e93; margin-top: 2px; }
+    .swim-step-status {
+      font-size: 10px; white-space: nowrap; padding: 2px 6px; border-radius: 8px;
+      flex-shrink: 0; align-self: flex-start; margin-top: 2px;
+    }
+    .swim-step-status.completed { background: #eef7ea; color: #3f971a; }
+    .swim-step-status.in-progress { background: #e6f4fd; color: #009fe3; }
+    .swim-step-status.pending { background: #f4f5f6; color: #6c7e93; }
+
+    /* Loop body */
+    .loop-body-container { margin: 4px 12px; border-left: 3px solid #f97316; padding: 6px 10px; background: #fff7ed; border-radius: 0 6px 6px 0; }
+    .gw-section.nested .loop-body-container { margin: 4px 0; }
+    .loop-body-header { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #f97316; font-weight: 500; margin-bottom: 6px; }
+    .loop-body-header .material-icons { font-size: 15px; }
+    .loop-step-row { border-color: #fed7aa; }
+    .loop-step-row:hover { border-color: #f97316; }
+    .loop-back-arrow { font-size: 11px; color: #f97316; text-align: right; padding-top: 4px; font-style: italic; }
 
     /* Sub-steps */
     .substeps-container { padding: 4px 0 8px 40px; border-left: 2px solid #009fe3; margin-left: 30px; }
@@ -466,15 +944,9 @@ import { ProcessStep, StepType } from '../../models/process.model';
     .fc-node:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .fc-node.selected { border-color: #009fe3; box-shadow: 0 0 0 3px rgba(0,159,227,0.2); }
     .fc-node.not-in-context { opacity: 0.5; }
-    .fc-node.decision { border-color: #f59e0b; border-radius: 4px; transform: none; }
-    .fc-node.parallel { border-color: #7c3aed; border-style: dashed; }
-    .fc-node.subprocess { border-color: #009fe3; border-width: 3px; }
     .fc-node.completed { border-color: #3f971a; }
     .fc-node.in-progress { border-color: #009fe3; }
     .fc-node-icon .material-icons { font-size: 20px; color: #6c7e93; }
-    .fc-node.decision .fc-node-icon .material-icons { color: #f59e0b; }
-    .fc-node.parallel .fc-node-icon .material-icons { color: #7c3aed; }
-    .fc-node.subprocess .fc-node-icon .material-icons { color: #009fe3; }
     .fc-node-body { flex: 1; }
     .fc-node-number { font-size: 10px; color: #6c7e93; display: block; }
     .fc-node-title { font-size: 13px; color: #353c46; }
@@ -485,6 +957,15 @@ import { ProcessStep, StepType } from '../../models/process.model';
 
     .fc-arrow-row { display: flex; justify-content: center; padding: 2px 0; }
     .fc-arrow { padding: 4px 0; }
+
+    /* Start / End nodes — flowchart view */
+    .fc-se-node {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      border-radius: 20px; padding: 5px 18px; align-self: center;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .fc-se-node.start { border: 2px solid #3f971a; color: #3f971a; background: #f0faf0; }
+    .fc-se-node.end   { border: 3px solid #353c46; color: #353c46; background: #f4f5f6; }
 
     .fc-parallel {
       display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 4px 0;
@@ -521,12 +1002,30 @@ import { ProcessStep, StepType } from '../../models/process.model';
     }
     .fc-loop .material-icons { font-size: 14px; }
 
+    /* Legend gateway dots */
+    .gw-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin-right: 4px; vertical-align: middle; transform: rotate(45deg);
+    }
+    .gw-dot.decision { background: #f59e0b; }
+    .gw-dot.parallel { background: #7c3aed; border-radius: 50%; transform: none; }
+    .gw-dot.loop { background: #f97316; border-radius: 50%; transform: none; }
+
+    /* Activity step row */
+    .step-row.activity-step { border-left: 3px solid #009fe3; }
+    .step-type-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap;
+    }
+    .step-type-chip.activity { background: #e6f4fd; color: #009fe3; }
+
     /* Designer toolbar */
     .fc-toolbar {
       display: flex; align-items: center; gap: 6px; padding: 8px 0 12px;
       border-bottom: 1px solid #ebebed; margin-bottom: 8px; flex-wrap: wrap;
     }
     .fc-toolbar-label { font-size: 11px; color: #6c7e93; text-transform: uppercase; }
+    .fc-toolbar-divider { width: 1px; height: 20px; background: #e0e0e0; margin: 0 4px; }
     .fc-tool-btn {
       display: flex; align-items: center; gap: 4px; padding: 5px 12px;
       background: white; border: 1px dashed #bdbdbd; border-radius: 6px;
@@ -535,13 +1034,32 @@ import { ProcessStep, StepType } from '../../models/process.model';
     }
     .fc-tool-btn:hover { border-color: #009fe3; background: #e6f4fd; }
     .fc-tool-btn.active { border-style: solid; border-width: 2px; background: #e6f4fd; font-weight: 500; }
+    .fc-tool-btn.task { border-color: #586475; }
+    .fc-tool-btn.task.active { background: #f4f5f6; }
+    .fc-tool-btn.activity { border-color: #009fe3; }
+    .fc-tool-btn.activity.active { background: #e6f4fd; }
     .fc-tool-btn.decision { border-color: #f59e0b; }
     .fc-tool-btn.decision.active { background: #fef9e7; }
     .fc-tool-btn.parallel { border-color: #7c3aed; }
     .fc-tool-btn.parallel.active { background: #f9f5ff; }
+    .fc-tool-btn.loop { border-color: #f97316; }
+    .fc-tool-btn.loop.active { background: #fff7ed; }
     .fc-tool-btn.subprocess { border-color: #009fe3; }
     .fc-tool-btn.cancel { border-color: #8c0909; color: #8c0909; border-style: solid; }
     .fc-tool-btn .material-icons { font-size: 16px; }
+
+    /* Flowchart node type variants */
+    .fc-node.gateway { border-style: dashed; border-radius: 4px; }
+    .fc-node.decision { border-color: #f59e0b; }
+    .fc-node.decision .fc-node-icon .material-icons { color: #f59e0b; }
+    .fc-node.parallel { border-color: #7c3aed; }
+    .fc-node.parallel .fc-node-icon .material-icons { color: #7c3aed; }
+    .fc-node.loop-gw { border-color: #f97316; }
+    .fc-node.loop-gw .fc-node-icon .material-icons { color: #f97316; }
+    .fc-node.activity { border-color: #009fe3; border-style: dashed; }
+    .fc-node.activity .fc-node-icon .material-icons { color: #009fe3; }
+    .fc-node.subprocess { border-color: #009fe3; border-width: 3px; }
+    .fc-node.subprocess .fc-node-icon .material-icons { color: #009fe3; }
 
     /* Mode hint */
     .fc-mode-hint {
@@ -598,11 +1116,116 @@ import { ProcessStep, StepType } from '../../models/process.model';
       box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translate(-50%, -50%);
     }
     .fc-ghost .material-icons { font-size: 16px; color: #009fe3; }
+
+    /* ===== Flowchart branch lane columns ===== */
+    .fc-branch-lanes {
+      display: flex; width: 100%; border: 1px solid #e0e0e0;
+      border-radius: 0 0 6px 6px; overflow: hidden;
+    }
+    .fc-branch-lane {
+      flex: 1; min-width: 100px; display: flex; flex-direction: column;
+      border-right: 1px solid #e0e0e0;
+    }
+    .fc-branch-lane:last-child { border-right: none; }
+    .fc-branch-lane.decision { background: #fffbf0; }
+    .fc-branch-lane.parallel { background: #faf8ff; }
+    .fc-loop-lane {
+      width: 100%; border: 1px solid #f97316; border-radius: 0 0 6px 6px;
+      background: #fff7ed; overflow: hidden;
+    }
+    .fc-lane-hdr {
+      display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+      border-bottom: 1px solid #e0e0e0; font-size: 11px; font-weight: 600;
+    }
+    .fc-branch-lane.decision .fc-lane-hdr { background: #fef9e7; color: #f59e0b; }
+    .fc-branch-lane.parallel .fc-lane-hdr { background: #f9f5ff; color: #7c3aed; }
+    .fc-lane-hdr.loop { background: #fff7ed; color: #f97316; border-bottom-color: #fed7aa; }
+    .fc-lane-label { flex: 1; }
+    .fc-lane-cond { font-size: 10px; color: #6c7e93; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70px; }
+    .fc-lane-join { height: 3px; width: 100%; }
+    .fc-lane-join.decision { background: #f59e0b; }
+    .fc-lane-join.parallel { background: #7c3aed; }
+
+    /* Inner nodes inside flowchart lane columns */
+    .fc-inner-node {
+      display: flex; align-items: center; gap: 5px; padding: 5px 8px;
+      background: white; border: 1px solid #e0e0e0; border-radius: 4px;
+      margin: 3px 4px; cursor: pointer; position: relative; font-size: 11px;
+    }
+    .fc-inner-node:hover { border-color: #009fe3; }
+    .fc-inner-node.selected { border-color: #009fe3; background: #e6f4fd; }
+    .fc-inner-node.gateway { border-style: dashed; }
+    .fc-inner-node.decision { border-color: #f59e0b; }
+    .fc-inner-node.parallel { border-color: #7c3aed; }
+    .fc-inner-node.loop { border-color: #f97316; }
+    .fc-inner-node.activity { border-color: #009fe3; }
+    .fc-inner-node.completed { border-color: #3f971a; }
+    .fc-inner-icon .material-icons { font-size: 13px; color: #6c7e93; }
+    .fc-inner-node.decision .fc-inner-icon .material-icons { color: #f59e0b; }
+    .fc-inner-node.parallel .fc-inner-icon .material-icons { color: #7c3aed; }
+    .fc-inner-node.loop .fc-inner-icon .material-icons { color: #f97316; }
+    .fc-inner-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fc-inner-status { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .fc-inner-status.completed { background: #3f971a; }
+    .fc-inner-status.in-progress { background: #009fe3; }
+    .fc-inner-status.pending { background: #bdbdbd; }
+    .fc-inner-node .fc-node-delete { top: -6px; right: -6px; width: 16px; height: 16px; }
+    .fc-inner-node .fc-node-delete .material-icons { font-size: 10px; }
+
+    /* Inner drop zones within lane columns */
+    .fc-inner-drop {
+      height: 6px; display: flex; align-items: center; justify-content: center;
+      cursor: default; margin: 0 4px; position: relative;
+    }
+    .fc-inner-drop.active { height: 18px; cursor: pointer; }
+    .fc-inner-drop .fc-drop-line {
+      flex: 1; height: 2px; background: transparent; transition: background 0.15s; border-radius: 1px;
+    }
+    .fc-inner-drop.active:hover .fc-drop-line { background: #009fe3; }
+    .fc-inner-drop .fc-drop-plus { position: absolute; font-size: 12px; color: #009fe3; opacity: 0; }
+    .fc-inner-drop.active:hover .fc-drop-plus { opacity: 1; }
+
+    /* Nested lanes within flowchart inner lanes */
+    .fc-inner-lanes {
+      display: flex; margin: 2px 4px 4px; border: 1px solid #e0e0e0;
+      border-radius: 4px; overflow: hidden;
+    }
+    .fc-inner-lane {
+      flex: 1; min-width: 70px; display: flex; flex-direction: column;
+      border-right: 1px solid #e0e0e0;
+    }
+    .fc-inner-lane:last-child { border-right: none; }
+    .fc-inner-lane.decision { background: #fffbf0; }
+    .fc-inner-lane.parallel { background: #faf8ff; }
+    .fc-inner-lane-hdr {
+      display: flex; align-items: center; gap: 3px; padding: 3px 5px;
+      font-size: 10px; font-weight: 600; border-bottom: 1px solid #e0e0e0;
+    }
+    .fc-inner-lane.decision .fc-inner-lane-hdr { background: #fef9e7; color: #f59e0b; }
+    .fc-inner-lane.parallel .fc-inner-lane-hdr { background: #f9f5ff; color: #7c3aed; }
+    .fc-inner-lane-hdr.loop { color: #f97316; background: #fff7ed; border-bottom-color: #fed7aa; }
+    .fc-inner-lane-hdr .material-icons { font-size: 11px; }
+    .fc-inner-loop-body {
+      margin: 2px 4px 4px; border-left: 2px solid #f97316; padding: 2px 4px;
+      background: #fff7ed; border-radius: 0 3px 3px 0;
+    }
+
+    /* Gateway collapse button in flowchart node */
+    .fc-node-collapse {
+      background: none; border: none; cursor: pointer; padding: 1px;
+      display: flex; align-items: center; color: #bdbdbd;
+    }
+    .fc-node-collapse:hover { color: #586475; }
+    .fc-node-collapse .material-icons { font-size: 16px; }
   `,
 })
 export class ProcessOverviewComponent {
   svc = inject(ProcessService);
   viewMode = signal<'sequence' | 'flowchart'>('sequence');
+  fullscreen = signal(false);
+
+  @HostListener('document:keydown.escape')
+  onEscape() { if (this.fullscreen()) this.fullscreen.set(false); }
 
   statusLabel(status: ProcessStep['status']): string {
     return { completed: 'Abgeschlossen', 'in-progress': 'In Bearbeitung', pending: 'Ausstehend' }[status];
@@ -618,21 +1241,42 @@ export class ProcessOverviewComponent {
     step.collapsed = !step.collapsed;
   }
 
-  getStepTitle(stepId: string): string {
-    return this.svc.steps().find((s) => s.id === stepId)?.title ?? stepId;
+  // --- Lane add buttons (tool-aware) ---
+  addNodeToBranch(event: Event, gatewayId: string, branchId: string) {
+    event.stopPropagation();
+    this.svc.insertStepIntoBranch(gatewayId, branchId, 999, this.selectedTool() ?? 'task');
+    this.selectedTool.set(null);
   }
 
-  isLoopBack(step: ProcessStep, branch: { targetStepIds: string[] }): boolean {
-    const steps = this.svc.steps();
-    const currentIdx = steps.findIndex((s) => s.id === step.id);
-    const targetIdx = steps.findIndex((s) => s.id === branch.targetStepIds[0]);
-    return targetIdx >= 0 && targetIdx <= currentIdx;
+  addNodeToParallelPath(event: Event, gatewayId: string, pathIndex: number) {
+    event.stopPropagation();
+    this.svc.insertStepIntoParallelPath(gatewayId, pathIndex, 999, this.selectedTool() ?? 'task');
+    this.selectedTool.set(null);
+  }
+
+  addNodeToLoopBody(event: Event, gatewayId: string) {
+    event.stopPropagation();
+    this.svc.insertStepIntoLoopBody(gatewayId, 999, this.selectedTool() ?? 'task');
+    this.selectedTool.set(null);
+  }
+
+  onInnerSlotClick(atIndex: number, gwId: string | null, branchId: string | null, pathIdx: number | null, isLoop: boolean) {
+    if (this.isDragging() || !gwId) return;
+    const tool = this.selectedTool() ?? 'task';
+    if (branchId) {
+      this.svc.insertStepIntoBranch(gwId, branchId, atIndex, tool);
+    } else if (pathIdx !== null) {
+      this.svc.insertStepIntoParallelPath(gwId, pathIdx, atIndex, tool);
+    } else if (isLoop) {
+      this.svc.insertStepIntoLoopBody(gwId, atIndex, tool);
+    }
+    this.selectedTool.set(null);
   }
 
   // --- Designer: Toolbar (click to select, click + to place) ---
-  selectedTool = signal<StepType | null>(null);
+  selectedTool = signal<string | null>(null);
 
-  selectTool(type: StepType) {
+  selectTool(type: string) {
     this.selectedTool.set(this.selectedTool() === type ? null : type);
   }
 
@@ -725,11 +1369,18 @@ export class ProcessOverviewComponent {
   onDropZoneEnter(_index: number) {}
   onDropZoneLeave() {}
 
-  cycleStepType(event: Event, step: ProcessStep) {
+  cycleNodeType(event: Event, step: ProcessStep) {
     event.stopPropagation();
-    const types: (StepType | undefined)[] = [undefined, 'decision', 'parallel', 'subprocess'];
-    const currentIdx = types.indexOf(step.stepType);
-    const nextType = types[(currentIdx + 1) % types.length];
-    this.svc.updateStepField(step.id, { stepType: nextType } as Partial<ProcessStep>);
+    if (step.kind === 'gateway') {
+      const types: GatewayType[] = ['decision', 'parallel', 'loop'];
+      const currentIdx = types.indexOf(step.gatewayType ?? 'decision');
+      const nextType = types[(currentIdx + 1) % types.length];
+      this.svc.updateStepField(step.id, { gatewayType: nextType } as Partial<ProcessStep>);
+    } else {
+      const types: StepType[] = ['task', 'activity', 'subprocess'];
+      const currentIdx = types.indexOf(step.stepType ?? 'task');
+      const nextType = types[(currentIdx + 1) % types.length];
+      this.svc.updateStepField(step.id, { stepType: nextType } as Partial<ProcessStep>);
+    }
   }
 }

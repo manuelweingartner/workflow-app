@@ -2,7 +2,7 @@ import { Injectable, signal, computed } from '@angular/core';
 import {
   Process, ProcessStep, Dossier, ContextObject, ContextLink,
   Input, Task, CompletionCriterion, PortalMessage, PortalDocument, Note, Participant,
-  AppTab, TabType, Sitzung,
+  AppTab, TabType, Sitzung, GatewayType,
 } from '../models/process.model';
 
 export interface LinkedDocument {
@@ -76,8 +76,13 @@ export class ProcessService {
     return this._sitzungen().find((s) => s.id === tab.referenceId) ?? null;
   });
 
-  // --- All steps of the active process ---
+  // --- All steps of the active process (top-level spine only — used by visualization loops) ---
   readonly steps = computed(() => this.activeProcess()?.steps ?? []);
+
+  // --- All work steps recursively flattened (used for progress, docs, tasks) ---
+  readonly allStepsFlat = computed(() =>
+    this.flattenSteps(this.activeProcess()?.steps ?? [])
+  );
 
   // --- Context: in Geschäft-view the dossier is the active context ---
   readonly activeContextId = computed(() => {
@@ -88,8 +93,8 @@ export class ProcessService {
   // --- Steps linked to the active context (dossier/geschäft) ---
   readonly stepsForActiveContext = computed(() => {
     const ctxId = this.activeContextId();
-    if (!ctxId) return this.steps();
-    return this.steps().filter((s) =>
+    if (!ctxId) return this.allStepsFlat();
+    return this.allStepsFlat().filter((s) =>
       s.contextLinks.some((cl) => cl.contextId === ctxId)
     );
   });
@@ -97,8 +102,8 @@ export class ProcessService {
   // --- Check if a step is linked to the active context ---
   isStepLinkedToContext(stepId: string): boolean {
     const ctxId = this.activeContextId();
-    if (!ctxId) return true; // in Prozess-view all steps belong
-    const step = this.steps().find((s) => s.id === stepId);
+    if (!ctxId) return true;
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     return step?.contextLinks.some((cl) => cl.contextId === ctxId) ?? false;
   }
 
@@ -107,9 +112,9 @@ export class ProcessService {
     return this._contextObjects().find((c) => c.id === id);
   }
 
-  // --- Resolve context links for a step ---
+  // --- Resolve context links for a step (searches entire tree) ---
   getContextsForStep(stepId: string): ContextObject[] {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return [];
     return step.contextLinks
       .map((cl) => this.getContextObject(cl.contextId))
@@ -118,11 +123,12 @@ export class ProcessService {
 
   readonly selectedStep = computed(() => {
     const id = this.selectedStepId();
-    return id ? this.steps().find((s) => s.id === id) ?? null : null;
+    if (!id) return null;
+    return this.findStepInTree(this.activeProcess()?.steps ?? [], id) ?? null;
   });
 
   readonly progress = computed(() => {
-    const s = this.steps();
+    const s = this.allStepsFlat();
     const done = s.filter((x) => x.status === 'completed').length;
     return { done, total: s.length };
   });
@@ -134,7 +140,7 @@ export class ProcessService {
   });
 
   readonly allDocuments = computed<LinkedDocument[]>(() =>
-    this.steps().flatMap((step) =>
+    this.allStepsFlat().flatMap((step) =>
       step.inputs
         .filter((i) => i.type === 'document')
         .map((input) => ({ input, stepId: step.id, stepNumber: step.number, stepTitle: step.title }))
@@ -142,13 +148,13 @@ export class ProcessService {
   );
 
   readonly allTasks = computed<LinkedTask[]>(() =>
-    this.steps().flatMap((step) =>
+    this.allStepsFlat().flatMap((step) =>
       step.tasks.map((task) => ({ task, stepId: step.id, stepNumber: step.number, stepTitle: step.title }))
     )
   );
 
   readonly allFields = computed<LinkedField[]>(() =>
-    this.steps().flatMap((step) =>
+    this.allStepsFlat().flatMap((step) =>
       step.inputs
         .filter((i) => i.type === 'field')
         .map((input) => ({ input, stepId: step.id, stepNumber: step.number, stepTitle: step.title }))
@@ -263,6 +269,86 @@ export class ProcessService {
     }
   }
 
+  // --- Recursive tree helpers ---
+
+  private findStepInTree(steps: ProcessStep[], id: string): ProcessStep | null {
+    for (const s of steps) {
+      if (s.id === id) return s;
+      for (const b of s.branches ?? []) {
+        const f = this.findStepInTree(b.steps, id); if (f) return f;
+      }
+      for (const p of s.parallelPaths ?? []) {
+        const f = this.findStepInTree(p, id); if (f) return f;
+      }
+      if (s.loopBody) { const f = this.findStepInTree(s.loopBody, id); if (f) return f; }
+      if (s.subSteps) { const f = this.findStepInTree(s.subSteps, id); if (f) return f; }
+    }
+    return null;
+  }
+
+  private updateStepInTree(steps: ProcessStep[], updated: ProcessStep): ProcessStep[] {
+    return steps.map(s => {
+      if (s.id === updated.id) return updated;
+      return { ...s,
+        branches:      s.branches?.map(b => ({ ...b, steps: this.updateStepInTree(b.steps, updated) })),
+        parallelPaths: s.parallelPaths?.map(p => this.updateStepInTree(p, updated)),
+        loopBody:      s.loopBody ? this.updateStepInTree(s.loopBody, updated) : undefined,
+        subSteps:      s.subSteps ? this.updateStepInTree(s.subSteps, updated) : undefined,
+      };
+    });
+  }
+
+  private deleteStepFromTree(steps: ProcessStep[], id: string): ProcessStep[] {
+    return steps.filter(s => s.id !== id).map(s => ({ ...s,
+      branches:      s.branches?.map(b => ({ ...b, steps: this.deleteStepFromTree(b.steps, id) })),
+      parallelPaths: s.parallelPaths?.map(p => this.deleteStepFromTree(p, id)),
+      loopBody:      s.loopBody ? this.deleteStepFromTree(s.loopBody, id) : undefined,
+      subSteps:      s.subSteps ? this.deleteStepFromTree(s.subSteps, id) : undefined,
+    }));
+  }
+
+  private flattenSteps(steps: ProcessStep[]): ProcessStep[] {
+    const result: ProcessStep[] = [];
+    for (const s of steps) {
+      if (s.kind !== 'gateway') result.push(s);
+      for (const b of s.branches ?? []) result.push(...this.flattenSteps(b.steps));
+      for (const p of s.parallelPaths ?? []) result.push(...this.flattenSteps(p));
+      if (s.loopBody) result.push(...this.flattenSteps(s.loopBody));
+      if (s.subSteps) result.push(...this.flattenSteps(s.subSteps));
+    }
+    return result;
+  }
+
+  private makeBlankStep(nodeType?: string): ProcessStep {
+    const isGateway = nodeType === 'decision' || nodeType === 'parallel' || nodeType === 'loop';
+    return {
+      id: crypto.randomUUID(),
+      number: 'NEU',
+      title: nodeType === 'decision'   ? 'Entscheidung'
+           : nodeType === 'parallel'   ? 'Parallele Ausführung'
+           : nodeType === 'loop'       ? 'Schleife'
+           : nodeType === 'activity'   ? 'Neue Aktivität'
+           : nodeType === 'subprocess' ? 'Neuer Sub-Prozess'
+           : 'Neue Aufgabe',
+      status: 'pending',
+      kind: isGateway ? 'gateway' : 'step',
+      gatewayType: isGateway ? (nodeType as GatewayType) : undefined,
+      stepType: !isGateway ? (nodeType === 'activity' ? 'activity' : nodeType === 'subprocess' ? 'subprocess' : 'task') : undefined,
+      responsible: '', category: 'Allgemein',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      branches: nodeType === 'decision' ? [
+        { id: crypto.randomUUID(), label: 'Ja',   condition: '', steps: [] },
+        { id: crypto.randomUUID(), label: 'Nein', condition: '', steps: [] },
+      ] : undefined,
+      parallelPaths: nodeType === 'parallel' ? [
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 1', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 2', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ] : undefined,
+      loopBody:      nodeType === 'loop' ? [] : undefined,
+      loopCondition: nodeType === 'loop' ? '' : undefined,
+    };
+  }
+
   insertStepAfter(afterId: string) {
     const proc = this.activeProcess();
     if (!proc) return;
@@ -272,8 +358,10 @@ export class ProcessService {
     const newStep: ProcessStep = {
       id: crypto.randomUUID(),
       number: 'NEU',
-      title: 'Neuer Prozessschritt',
+      title: 'Neue Aufgabe',
       status: 'pending',
+      kind: 'step',
+      stepType: 'task',
       responsible: '',
       category: p.steps[0]?.category || 'Allgemein',
       contextLinks: [],
@@ -288,24 +376,38 @@ export class ProcessService {
     this.selectedStepId.set(newStep.id);
   }
 
-  insertStepAt(index: number, stepType?: string) {
+  insertStepAt(index: number, nodeType?: string) {
     const proc = this.activeProcess();
     if (!proc) return;
     const p = structuredClone(proc);
+    const isGateway = nodeType === 'decision' || nodeType === 'parallel' || nodeType === 'loop';
     const newStep: ProcessStep = {
       id: crypto.randomUUID(),
       number: 'NEU',
-      title: stepType === 'decision' ? 'Neue Entscheidung' : stepType === 'parallel' ? 'Neuer Parallel-Schritt' : stepType === 'subprocess' ? 'Neuer Sub-Prozess' : 'Neuer Prozessschritt',
+      title: nodeType === 'decision' ? 'Entscheidung' : nodeType === 'parallel' ? 'Parallele Ausführung' : nodeType === 'loop' ? 'Schleife' : nodeType === 'subprocess' ? 'Neuer Sub-Prozess' : nodeType === 'activity' ? 'Neue Aktivität' : 'Neue Aufgabe',
       status: 'pending',
+      kind: isGateway ? 'gateway' : 'step',
+      gatewayType: isGateway ? (nodeType as GatewayType) : undefined,
+      stepType: !isGateway ? (nodeType === 'subprocess' ? 'subprocess' : nodeType === 'activity' ? 'activity' : 'task') : undefined,
       responsible: '',
       category: p.steps[0]?.category || 'Allgemein',
-      stepType: (stepType as ProcessStep['stepType']) || undefined,
       contextLinks: [],
       tasks: [],
       inputs: [],
       actions: [],
       completionCriteria: [],
       conditionals: [],
+      // Initialize gateway containers
+      branches: nodeType === 'decision' ? [
+        { id: crypto.randomUUID(), label: 'Ja',   condition: '', steps: [] },
+        { id: crypto.randomUUID(), label: 'Nein', condition: '', steps: [] },
+      ] : undefined,
+      parallelPaths: nodeType === 'parallel' ? [
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 1', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 2', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ] : undefined,
+      loopBody:      nodeType === 'loop' ? [] : undefined,
+      loopCondition: nodeType === 'loop' ? '' : undefined,
     };
     p.steps.splice(index, 0, newStep);
     this.updateProcess(p);
@@ -335,7 +437,7 @@ export class ProcessService {
     const proc = this.activeProcess();
     if (!proc) return;
     const p = structuredClone(proc);
-    p.steps = p.steps.filter((s) => s.id !== stepId);
+    p.steps = this.deleteStepFromTree(p.steps, stepId);
     this.updateProcess(p);
     if (this.selectedStepId() === stepId) {
       this.selectedStepId.set(null);
@@ -346,15 +448,12 @@ export class ProcessService {
     const proc = this.activeProcess();
     if (!proc) return;
     const p = structuredClone(proc);
-    const idx = p.steps.findIndex((s) => s.id === updated.id);
-    if (idx !== -1) {
-      p.steps[idx] = updated;
-      this.updateProcess(p);
-    }
+    p.steps = this.updateStepInTree(p.steps, updated);
+    this.updateProcess(p);
   }
 
   addTaskToStep(stepId: string, title: string, assignee: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     updated.tasks.push({ id: crypto.randomUUID(), title, assignee, status: 'open' });
@@ -362,7 +461,7 @@ export class ProcessService {
   }
 
   removeTaskFromStep(stepId: string, taskId: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     updated.tasks = updated.tasks.filter((t) => t.id !== taskId);
@@ -370,7 +469,7 @@ export class ProcessService {
   }
 
   addCriterionToStep(stepId: string, description: string, suggestedNextStep?: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     updated.completionCriteria.push({
@@ -383,7 +482,7 @@ export class ProcessService {
   }
 
   removeCriterionFromStep(stepId: string, criterionId: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     updated.completionCriteria = updated.completionCriteria.filter((c) => c.id !== criterionId);
@@ -391,7 +490,7 @@ export class ProcessService {
   }
 
   toggleTaskStatus(stepId: string, taskId: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step || step.status === 'completed') return;
     const updated = structuredClone(step);
     const task = updated.tasks.find((t) => t.id === taskId);
@@ -409,7 +508,7 @@ export class ProcessService {
   }
 
   toggleCriterionMet(stepId: string, criterionId: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step || step.status === 'completed') return;
     const updated = structuredClone(step);
     const c = updated.completionCriteria.find((x) => x.id === criterionId);
@@ -419,7 +518,7 @@ export class ProcessService {
   }
 
   canCompleteStep(stepId: string): boolean {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step || step.status !== 'in-progress') return false;
     const allCriteriaMet = step.completionCriteria.length === 0 || step.completionCriteria.every((c) => c.met);
     const allTasksDone = step.tasks.length === 0 || step.tasks.every((t) => t.status === 'done');
@@ -430,15 +529,18 @@ export class ProcessService {
     const proc = this.activeProcess();
     if (!proc) return;
     const p = structuredClone(proc);
+    const step = this.findStepInTree(p.steps, stepId);
+    if (!step) return;
+    step.status = 'completed';
+    step.completedDate = new Date().toLocaleDateString('de-CH');
+    // Advance next top-level step (best-effort for top-level spine)
     const idx = p.steps.findIndex((s) => s.id === stepId);
-    if (idx === -1) return;
-    p.steps[idx].status = 'completed';
-    p.steps[idx].completedDate = new Date().toLocaleDateString('de-CH');
-    if (idx + 1 < p.steps.length && p.steps[idx + 1].status === 'pending') {
+    if (idx !== -1 && idx + 1 < p.steps.length && p.steps[idx + 1].status === 'pending') {
       p.steps[idx + 1].status = 'in-progress';
     }
+    p.steps = this.updateStepInTree(p.steps, step);
     this.updateProcess(p);
-    if (idx + 1 < p.steps.length) {
+    if (idx !== -1 && idx + 1 < p.steps.length) {
       this.selectedStepId.set(p.steps[idx + 1].id);
     }
   }
@@ -452,7 +554,7 @@ export class ProcessService {
   }
 
   updateStepField(stepId: string, field: Partial<ProcessStep>) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step || step.status === 'completed') return;
     const updated = { ...structuredClone(step), ...field };
     this.updateStep(updated);
@@ -471,7 +573,7 @@ export class ProcessService {
   }
 
   addContextLinkToStep(stepId: string, link: ContextLink) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     if (!updated.contextLinks.some((cl) => cl.contextId === link.contextId)) {
@@ -481,11 +583,49 @@ export class ProcessService {
   }
 
   removeContextLinkFromStep(stepId: string, contextId: string) {
-    const step = this.steps().find((s) => s.id === stepId);
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step) return;
     const updated = structuredClone(step);
     updated.contextLinks = updated.contextLinks.filter((cl) => cl.contextId !== contextId);
     this.updateStep(updated);
+  }
+
+  // --- Insert steps into gateway containers ---
+
+  insertStepIntoBranch(gatewayId: string, branchId: string, atIndex: number, nodeType?: string) {
+    const proc = this.activeProcess(); if (!proc) return;
+    const p = structuredClone(proc);
+    const gw = this.findStepInTree(p.steps, gatewayId); if (!gw) return;
+    const branch = gw.branches?.find(b => b.id === branchId); if (!branch) return;
+    const newStep = this.makeBlankStep(nodeType);
+    branch.steps.splice(Math.min(atIndex, branch.steps.length), 0, newStep);
+    p.steps = this.updateStepInTree(p.steps, gw);
+    this.updateProcess(p);
+    this.selectedStepId.set(newStep.id);
+  }
+
+  insertStepIntoParallelPath(gatewayId: string, pathIndex: number, atIndex: number, nodeType?: string) {
+    const proc = this.activeProcess(); if (!proc) return;
+    const p = structuredClone(proc);
+    const gw = this.findStepInTree(p.steps, gatewayId); if (!gw) return;
+    if (!gw.parallelPaths || pathIndex >= gw.parallelPaths.length) return;
+    const newStep = this.makeBlankStep(nodeType);
+    gw.parallelPaths[pathIndex].splice(Math.min(atIndex, gw.parallelPaths[pathIndex].length), 0, newStep);
+    p.steps = this.updateStepInTree(p.steps, gw);
+    this.updateProcess(p);
+    this.selectedStepId.set(newStep.id);
+  }
+
+  insertStepIntoLoopBody(gatewayId: string, atIndex: number, nodeType?: string) {
+    const proc = this.activeProcess(); if (!proc) return;
+    const p = structuredClone(proc);
+    const gw = this.findStepInTree(p.steps, gatewayId); if (!gw) return;
+    if (!gw.loopBody) gw.loopBody = [];
+    const newStep = this.makeBlankStep(nodeType);
+    gw.loopBody.splice(Math.min(atIndex, gw.loopBody.length), 0, newStep);
+    p.steps = this.updateStepInTree(p.steps, gw);
+    this.updateProcess(p);
+    this.selectedStepId.set(newStep.id);
   }
 
   // --- Serviceanfrage / Portal methods ---
@@ -563,6 +703,7 @@ const PROCESS_BAUGESUCH: Process = {
   steps: [
     {
       id: '1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '21.02.2024',
+      kind: 'step', stepType: 'task',
       responsible: 'Müller Sarah, Gesuchsteller', category: 'Baugesuch',
       contextLinks: [G('1')],
       tasks: [
@@ -585,6 +726,7 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '28.02.2024',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Baugesuch',
       contextLinks: [G('1')],
       tasks: [
@@ -600,8 +742,8 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '15.03.2024',
+      kind: 'step', stepType: 'subprocess',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
-      stepType: 'subprocess',
       subSteps: [
         { id: '3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '15.03.2024', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
         { id: '3b', number: '6855.2', title: 'Auflage durchführen (30 Tage)', status: 'completed', completedDate: '14.04.2024', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
@@ -623,8 +765,8 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '4', number: '6900', title: 'Fachberichte einholen', status: 'completed', completedDate: '20.04.2024',
+      kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
-      stepType: 'parallel',
       parallelPaths: [
         [{ id: '4a', number: '6900.1', title: 'Brandschutz-Bericht', status: 'completed', completedDate: '10.04.2024', responsible: 'Feuerpolizei', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: '4b', number: '6900.2', title: 'Statik-Bericht', status: 'completed', completedDate: '15.04.2024', responsible: 'Muster Ingenieure AG', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
@@ -653,13 +795,8 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '5', number: '6781', title: 'Baubewilligung prüfen', status: 'in-progress', dueDate: '15.08.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
-      stepType: 'decision',
-      branches: [
-        { id: 'b5-1', label: 'Bewilligt', condition: 'Entscheid == "Bewilligt"', targetStepIds: ['6'] },
-        { id: 'b5-2', label: 'Mit Auflagen', condition: 'Entscheid == "Bewilligt mit Auflagen"', targetStepIds: ['6'] },
-        { id: 'b5-3', label: 'Abgelehnt', condition: 'Entscheid == "Abgelehnt"', targetStepIds: ['11'] },
-      ],
       contextLinks: [G('1')],
       tasks: [
         { id: 't12', title: 'Bewilligungsentscheid verfassen', assignee: 'Oberholzer Martin', status: 'in-progress' },
@@ -682,7 +819,19 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [{ id: 'co3', condition: 'Entscheid == "Abgelehnt"', thenAction: 'Prozess beenden, Ablehnungsschreiben senden' }],
     },
     {
+      id: '5-gw', number: '', title: 'Entscheid Baubewilligung', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Bewilligungsverfahren',
+      branches: [
+        { id: 'b5-1', label: 'Bewilligt', condition: 'Entscheid == "Bewilligt"', steps: [] },
+        { id: 'b5-2', label: 'Mit Auflagen', condition: 'Entscheid == "Bewilligt mit Auflagen"', steps: [] },
+        { id: 'b5-3', label: 'Abgelehnt', condition: 'Entscheid == "Abgelehnt"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
       id: '6', number: '7010', title: 'Bewilligung versenden', status: 'pending', dueDate: '15.08.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       contextLinks: [G('1')],
       tasks: [
@@ -696,6 +845,7 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '7', number: '7100', title: 'Baubeginn melden', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Müller Sarah, Gesuchsteller', category: 'Bauetappe',
       contextLinks: [G('1')],
       tasks: [{ id: 't17', title: 'Baubeginn-Meldung einreichen', assignee: 'Müller Sarah', status: 'open' }],
@@ -709,9 +859,8 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '8', number: '7200', title: 'Rohbaukontrolle', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bauetappe',
-      loopBackToStepId: '8',
-      loopCondition: 'Resultat == "Mängel festgestellt"',
       contextLinks: [G('1')],
       tasks: [
         { id: 't18', title: 'Rohbaukontrolle durchführen', assignee: 'Oberholzer Martin', status: 'open' },
@@ -726,7 +875,16 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [{ id: 'co4', condition: 'Resultat == "Mängel festgestellt"', thenAction: 'Schritt "Mängelbehebung" einfügen' }],
     },
     {
+      id: '8-gw', number: '', title: 'Mängel?', status: 'pending',
+      kind: 'gateway', gatewayType: 'loop',
+      loopCondition: 'Resultat == "Mängel festgestellt"',
+      loopBody: [],
+      responsible: '', category: 'Bauetappe',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
       id: '9', number: '7300', title: 'Schlusskontrolle', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bauetappe',
       contextLinks: [G('1')],
       tasks: [{ id: 't20', title: 'Schlusskontrolle vor Ort', assignee: 'Oberholzer Martin', status: 'open' }],
@@ -736,7 +894,8 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [],
     },
     {
-      id: '10', number: '7400', title: 'Bezugsbewilligung', status: 'pending',
+      id: '10', number: '7400', title: 'Bezugsbewilligung ausstellen', status: 'pending',
+      kind: 'step', stepType: 'activity', activityKind: 'object-creation',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bauetappe',
       contextLinks: [G('1')],
       tasks: [{ id: 't21', title: 'Bezugsbewilligung ausstellen', assignee: 'Oberholzer Martin', status: 'open' }],
@@ -746,6 +905,7 @@ const PROCESS_BAUGESUCH: Process = {
     },
     {
       id: '11', number: '7500', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bauetappe',
       contextLinks: [G('1')],
       tasks: [{ id: 't22', title: 'Dossier archivieren', assignee: 'Sekretariat', status: 'open' }],
@@ -764,6 +924,7 @@ const PROCESS_AKTENEINSICHT: Process = {
   steps: [
     {
       id: 'ae-1', number: '1001', title: 'Antrag eingegangen', status: 'completed', completedDate: '10.03.2025',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [
@@ -780,6 +941,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-2', number: '1002', title: 'Vorprüfung des Antrags', status: 'completed', completedDate: '11.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [
@@ -795,6 +957,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-3', number: '1003', title: 'Identitätsprüfung', status: 'in-progress', dueDate: '20.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [
@@ -810,6 +973,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-4', number: '1004', title: 'Akten zusammenstellen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [
@@ -829,6 +993,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-5', number: '1005', title: 'Akteneinsicht gewähren', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [
@@ -842,6 +1007,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-6', number: '1006', title: 'Protokoll erstellen', status: 'pending',
+      kind: 'step', stepType: 'activity', activityKind: 'document',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [{ id: 'ae-t12', title: 'Einsichtsprotokoll erstellen', assignee: 'Weber Claudia', status: 'open' }],
@@ -852,6 +1018,7 @@ const PROCESS_AKTENEINSICHT: Process = {
     },
     {
       id: 'ae-7', number: '1007', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
       tasks: [{ id: 'ae-t13', title: 'Dossier abschliessen', assignee: 'Weber Claudia', status: 'open' }],
@@ -869,6 +1036,7 @@ const PROCESS_EINBUERGERUNG: Process = {
   steps: [
     {
       id: 'eb-1', number: '2001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '15.01.2025',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [
@@ -885,6 +1053,7 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-2', number: '2002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '18.01.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [
@@ -902,6 +1071,7 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-3', number: '2003', title: 'Abklärung Wohnsitzdauer', status: 'completed', completedDate: '20.01.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [{ id: 'eb-t6', title: 'Wohnsitzdauer im Einwohnerregister prüfen', assignee: 'Huber Peter', status: 'done' }],
@@ -915,8 +1085,8 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-4', number: '2004', title: 'Sprachprüfung / Integration', status: 'in-progress', dueDate: '28.02.2025',
+      kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
-      stepType: 'parallel',
       parallelPaths: [
         [{ id: 'eb-4a', number: '2004.1', title: 'Sprachprüfung durchführen', status: 'in-progress', responsible: 'Sprachschule', category: 'Einbürgerung', contextLinks: [G('3')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'eb-4b', number: '2004.2', title: 'Integrationsabklärung', status: 'pending', responsible: 'Huber Peter', category: 'Einbürgerung', contextLinks: [G('3')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
@@ -940,13 +1110,8 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-5', number: '2005', title: 'Einbürgerungskommission', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Einbürgerungskommission', category: 'Einbürgerung',
-      stepType: 'decision',
-      branches: [
-        { id: 'beb-1', label: 'Empfohlen', condition: 'Empfehlung == "Empfohlen"', targetStepIds: ['eb-6'] },
-        { id: 'beb-2', label: 'Nicht empfohlen', condition: 'Empfehlung == "Nicht empfohlen"', targetStepIds: ['eb-9'] },
-        { id: 'beb-3', label: 'Zurückgestellt', condition: 'Empfehlung == "Zurückgestellt"', targetStepIds: ['eb-4'] },
-      ],
       contextLinks: [G('3')],
       tasks: [
         { id: 'eb-t9', title: 'Einbürgerungsgespräch führen', assignee: 'Einbürgerungskommission', status: 'open' },
@@ -960,7 +1125,19 @@ const PROCESS_EINBUERGERUNG: Process = {
       conditionals: [{ id: 'eb-co2', condition: 'Empfehlung == "Nicht empfohlen"', thenAction: 'Ablehnungsbescheid erstellen' }],
     },
     {
+      id: 'eb-5-gw', number: '', title: 'Empfehlung', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Einbürgerung',
+      branches: [
+        { id: 'beb-1', label: 'Empfohlen', condition: 'Empfehlung == "Empfohlen"', steps: [] },
+        { id: 'beb-2', label: 'Nicht empfohlen', condition: 'Empfehlung == "Nicht empfohlen"', steps: [] },
+        { id: 'beb-3', label: 'Zurückgestellt', condition: 'Empfehlung == "Zurückgestellt"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
       id: 'eb-6', number: '2006', title: 'Gemeindeversammlungsbeschluss', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Gemeinderat', category: 'Einbürgerung',
       contextLinks: [G('3'), S('sitz-gv-1')],  // linked to Geschäft AND Sitzung!
       tasks: [
@@ -976,6 +1153,7 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-7', number: '2007', title: 'Kantonale Bewilligung', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Kanton', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [
@@ -989,6 +1167,7 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-8', number: '2008', title: 'Einbürgerungsurkunde ausstellen', status: 'pending',
+      kind: 'step', stepType: 'activity', activityKind: 'document',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [
@@ -1002,6 +1181,7 @@ const PROCESS_EINBUERGERUNG: Process = {
     },
     {
       id: 'eb-9', number: '2009', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
       tasks: [{ id: 'eb-t17', title: 'Dossier archivieren', assignee: 'Sekretariat', status: 'open' }],
@@ -1019,6 +1199,7 @@ const PROCESS_GEMEINDERAT: Process = {
   steps: [
     {
       id: 'gr-1', number: '3001', title: 'Anfrage eingegangen', status: 'completed', completedDate: '01.03.2025',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [
@@ -1035,6 +1216,7 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-2', number: '3002', title: 'Vorprüfung & Triage', status: 'completed', completedDate: '03.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Schmid Andrea, Gemeindeschreiberin', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [
@@ -1050,6 +1232,7 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-3', number: '3003', title: 'Zuständiges Ressort zuweisen', status: 'in-progress', dueDate: '15.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Meier Hans, Gemeinderat Verkehr', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [
@@ -1063,6 +1246,7 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-4', number: '3004', title: 'Stellungnahme erarbeiten', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Meier Hans, Gemeinderat Verkehr', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [
@@ -1080,6 +1264,7 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-5', number: '3005', title: 'Traktandierung Gemeinderatssitzung', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Schmid Andrea, Gemeindeschreiberin', category: 'Gemeinderat',
       contextLinks: [G('4'), S('sitz-gr-1')],  // linked to Geschäft AND Sitzung!
       tasks: [
@@ -1095,14 +1280,9 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-6', number: '3006', title: 'Beschlussfassung', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Gemeinderat', category: 'Gemeinderat',
-      stepType: 'decision',
-      branches: [
-        { id: 'bgr-1', label: 'Angenommen', condition: 'Beschluss == "Angenommen"', targetStepIds: ['gr-7'] },
-        { id: 'bgr-2', label: 'Abgelehnt', condition: 'Beschluss == "Abgelehnt"', targetStepIds: ['gr-7'] },
-        { id: 'bgr-3', label: 'Zurückgestellt', condition: 'Beschluss == "Zurückgestellt"', targetStepIds: ['gr-4'] },
-      ],
-      contextLinks: [G('4'), S('sitz-gr-1')],  // linked to Geschäft AND Sitzung!
+      contextLinks: [G('4'), S('sitz-gr-1')],
       tasks: [
         { id: 'gr-t12', title: 'Beratung im Gemeinderat', assignee: 'Gemeinderat', status: 'open' },
         { id: 'gr-t13', title: 'Beschluss fassen', assignee: 'Gemeinderat', status: 'open' },
@@ -1115,7 +1295,19 @@ const PROCESS_GEMEINDERAT: Process = {
       conditionals: [{ id: 'gr-co1', condition: 'Beschluss == "Zurückgestellt"', thenAction: 'Zurück an Ressort für weitere Abklärungen' }],
     },
     {
+      id: 'gr-6-gw', number: '', title: 'Beschluss', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Gemeinderat',
+      branches: [
+        { id: 'bgr-1', label: 'Angenommen', condition: 'Beschluss == "Angenommen"', steps: [] },
+        { id: 'bgr-2', label: 'Abgelehnt', condition: 'Beschluss == "Abgelehnt"', steps: [] },
+        { id: 'bgr-3', label: 'Zurückgestellt', condition: 'Beschluss == "Zurückgestellt"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
       id: 'gr-7', number: '3007', title: 'Antwort an Antragsteller:in', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Schmid Andrea, Gemeindeschreiberin', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [
@@ -1132,6 +1324,7 @@ const PROCESS_GEMEINDERAT: Process = {
     },
     {
       id: 'gr-8', number: '3008', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Schmid Andrea, Gemeindeschreiberin', category: 'Gemeinderat',
       contextLinks: [G('4')],
       tasks: [{ id: 'gr-t16', title: 'Dossier archivieren', assignee: 'Sekretariat', status: 'open' }],
@@ -1149,6 +1342,7 @@ const PROCESS_VERANSTALTUNG: Process = {
   steps: [
     {
       id: 'va-1', number: '4001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '20.02.2025',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [
@@ -1166,6 +1360,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-2', number: '4002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '22.02.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [
@@ -1183,6 +1378,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-3', number: '4003', title: 'Risikobeurteilung', status: 'completed', completedDate: '28.02.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [
@@ -1198,8 +1394,8 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-4', number: '4004', title: 'Fachstellen-Vernehmlassung', status: 'in-progress', dueDate: '20.03.2025',
+      kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
-      stepType: 'parallel',
       parallelPaths: [
         [{ id: 'va-4a', number: '4004.1', title: 'Feuerpolizei', status: 'completed', completedDate: '05.03.2025', responsible: 'Feuerpolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'va-4b', number: '4004.2', title: 'Kantonspolizei', status: 'in-progress', responsible: 'Kantonspolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
@@ -1224,6 +1420,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-5', number: '4005', title: 'Auflagen festlegen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [
@@ -1239,6 +1436,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-6', number: '4006', title: 'Bewilligung erteilen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Gemeinderat', category: 'Veranstaltung',
       contextLinks: [G('5'), S('sitz-gr-1')],  // linked to Geschäft AND Sitzung!
       tasks: [
@@ -1258,6 +1456,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-7', number: '4007', title: 'Veranstaltung durchführen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Steiner Anna, Veranstalter', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [{ id: 'va-t16', title: 'Auflagen-Checkliste vor Ort prüfen', assignee: 'Frei Barbara', status: 'open' }],
@@ -1267,6 +1466,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-8', number: '4008', title: 'Nachbearbeitung', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [
@@ -1282,6 +1482,7 @@ const PROCESS_VERANSTALTUNG: Process = {
     },
     {
       id: 'va-9', number: '4009', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
       tasks: [{ id: 'va-t19', title: 'Dossier archivieren', assignee: 'Sekretariat', status: 'open' }],
@@ -1299,6 +1500,7 @@ const PROCESS_KESB: Process = {
   steps: [
     {
       id: 'kes-1', number: '5001', title: 'Gefahrenmeldung eingegangen', status: 'completed', completedDate: '05.03.2025',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1316,6 +1518,7 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-2', number: '5002', title: 'Dringlichkeitsprüfung', status: 'completed', completedDate: '05.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1332,6 +1535,7 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-3', number: '5003', title: 'Abklärungsauftrag erteilen', status: 'in-progress', dueDate: '15.03.2025',
+      kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1352,8 +1556,8 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-4', number: '5004', title: 'Abklärung durchführen', status: 'pending',
+      kind: 'step', stepType: 'subprocess',
       responsible: 'Abklärungsperson (mandatiert)', category: 'KESB',
-      stepType: 'subprocess',
       subSteps: [
         { id: 'kes-4a', number: '5004.1', title: 'Hausbesuch durchführen', status: 'pending', responsible: 'Abklärungsperson', category: 'KESB', contextLinks: [G('6')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
         { id: 'kes-4b', number: '5004.2', title: 'Gespräch mit Eltern', status: 'pending', responsible: 'Abklärungsperson', category: 'KESB', contextLinks: [G('6')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
@@ -1374,6 +1578,7 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-5', number: '5005', title: 'Bericht erstellen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Abklärungsperson (mandatiert)', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1390,15 +1595,9 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-6', number: '5006', title: 'KESB-Sitzung / Entscheid', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'KESB-Spruchkörper', category: 'KESB',
-      stepType: 'decision',
-      branches: [
-        { id: 'bkes-1', label: 'Keine Massnahme', condition: 'Entscheid == "Keine Massnahme"', targetStepIds: ['kes-9'] },
-        { id: 'bkes-2', label: 'Beistandschaft', condition: 'Entscheid == "Beistandschaft"', targetStepIds: ['kes-7'] },
-        { id: 'bkes-3', label: 'Obhutsentzug', condition: 'Entscheid == "Obhutsentzug"', targetStepIds: ['kes-7'] },
-        { id: 'bkes-4', label: 'Freiwillig', condition: 'Entscheid == "Freiwillige Massnahme"', targetStepIds: ['kes-7'] },
-      ],
-      contextLinks: [G('6'), S('sitz-kesb-1')],  // linked to Geschäft AND Sitzung!
+      contextLinks: [G('6'), S('sitz-kesb-1')],
       tasks: [
         { id: 'kes-t14', title: 'Fall traktandieren', assignee: 'Sekretariat KESB', status: 'open' },
         { id: 'kes-t15', title: 'Anhörung Familie', assignee: 'KESB-Spruchkörper', status: 'open' },
@@ -1412,7 +1611,20 @@ const PROCESS_KESB: Process = {
       conditionals: [{ id: 'kes-co2', condition: 'Entscheid == "Obhutsentzug"', thenAction: 'Sofortige Platzierung einleiten' }],
     },
     {
+      id: 'kes-6-gw', number: '', title: 'Massnahme', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'KESB',
+      branches: [
+        { id: 'bkes-1', label: 'Keine Massnahme', condition: 'Entscheid == "Keine Massnahme"', steps: [] },
+        { id: 'bkes-2', label: 'Beistandschaft', condition: 'Entscheid == "Beistandschaft"', steps: [] },
+        { id: 'bkes-3', label: 'Obhutsentzug', condition: 'Entscheid == "Obhutsentzug"', steps: [] },
+        { id: 'bkes-4', label: 'Freiwillig', condition: 'Entscheid == "Freiwillige Massnahme"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
       id: 'kes-7', number: '5007', title: 'Massnahme anordnen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1427,6 +1639,7 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-8', number: '5008', title: 'Massnahme umsetzen & überwachen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Mandatierte Beistandsperson', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [
@@ -1440,6 +1653,7 @@ const PROCESS_KESB: Process = {
     },
     {
       id: 'kes-9', number: '5009', title: 'Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
       tasks: [{ id: 'kes-t22', title: 'Dossier archivieren', assignee: 'Sekretariat KESB', status: 'open' }],

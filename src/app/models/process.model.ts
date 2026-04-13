@@ -49,26 +49,50 @@ export interface ProcessOwner {
   email?: string;
 }
 
-export type StepType = 'standard' | 'decision' | 'parallel' | 'subprocess';
+// Step types — actual work items
+export type StepType = 'task' | 'activity' | 'subprocess';
+
+// Task sub-modes
+export type TaskMode = 'description' | 'wizard';
+
+// Activity automation kinds
+export type ActivityKind = 'object-creation' | 'interface' | 'ai' | 'notification' | 'document';
+
+// Control flow gateway types (NOT steps — these route execution between steps)
+export type GatewayType = 'decision' | 'parallel' | 'loop';
 
 export interface Branch {
   id: string;
   label: string;
   condition: string;
-  targetStepIds: string[];
+  steps: ProcessStep[];   // each branch owns its own step sequence
 }
 
 export interface ProcessStep {
+  // Discriminator: 'step' = actual work, 'gateway' = control flow routing
+  kind?: 'step' | 'gateway';
+
   id: string;
   number: string;
   title: string;
   status: 'completed' | 'in-progress' | 'pending';
-  stepType?: StepType;
-  branches?: Branch[];
-  parallelPaths?: ProcessStep[][];
-  subSteps?: ProcessStep[];
-  loopBackToStepId?: string;
+
+  // For kind='step': what type of work?
+  stepType?: StepType;            // 'task' | 'activity' | 'subprocess'
+  taskMode?: TaskMode;            // for stepType='task': description vs wizard
+  activityKind?: ActivityKind;    // for stepType='activity': what automation
+
+  // For kind='gateway': what type of control flow?
+  gatewayType?: GatewayType;      // 'decision' | 'parallel' | 'loop'
+
+  // Gateway data (populated when kind='gateway')
+  branches?: Branch[];             // for gatewayType='decision' — each branch owns its steps
+  parallelPaths?: ProcessStep[][];  // for gatewayType='parallel' — each path is a step sequence
+  loopBody?: ProcessStep[];         // for gatewayType='loop' — steps inside the loop iteration
   loopCondition?: string;
+
+  // Step data (populated when kind='step')
+  subSteps?: ProcessStep[];       // for stepType='subprocess'
   collapsed?: boolean;
   dueDate?: string;
   completedDate?: string;

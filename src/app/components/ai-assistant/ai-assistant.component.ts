@@ -213,8 +213,8 @@ export class AiAssistantComponent {
       const steps = proc.steps;
       const done = steps.filter(s => s.status === 'completed').length;
       const current = steps.find(s => s.status === 'in-progress');
-      const decisions = steps.filter(s => s.stepType === 'decision').length;
-      const parallels = steps.filter(s => s.stepType === 'parallel').length;
+      const decisions = steps.filter(s => s.gatewayType === 'decision').length;
+      const parallels = steps.filter(s => s.gatewayType === 'parallel').length;
 
       let text = `<strong>${proc.title}</strong> ist ein Prozess mit <strong>${steps.length} Schritten</strong>, `;
       text += `verantwortet von <strong>${proc.processOwner.name}</strong> (${proc.processOwner.role}).<br><br>`;
