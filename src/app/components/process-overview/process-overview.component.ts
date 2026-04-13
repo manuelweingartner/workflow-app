@@ -107,7 +107,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                   @for (sub of bs.parallelPaths; track $index; let pi = $index) {
                     <div class="gw-lane parallel">
                       <div class="gw-lane-hdr">
-                        <span class="gw-lane-label">Pfad {{ pi + 1 }}</span>
+                        <span class="gw-lane-label">{{ bs.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
                         <button class="lane-add-btn" (click)="addNodeToParallelPath($event, bs.id, pi)" title="Hinzufügen">
                           <i class="material-icons">add</i>
                         </button>
@@ -241,7 +241,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
               @for (sub of bs.parallelPaths; track $index; let pi = $index) {
                 <div class="fc-inner-lane parallel">
                   <div class="fc-inner-lane-hdr">
-                    <span>Pfad {{ pi + 1 }}</span>
+                    <span>{{ bs.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
                     <button class="lane-add-btn" (click)="addNodeToParallelPath($event, bs.id, pi)" title="Hinzufügen">
                       <i class="material-icons">add</i>
                     </button>
@@ -340,7 +340,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                         @for (path of step.parallelPaths; track $index; let pi = $index) {
                           <div class="gw-lane parallel">
                             <div class="gw-lane-hdr">
-                              <span class="gw-lane-label">Pfad {{ pi + 1 }}</span>
+                              <span class="gw-lane-label">{{ step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
                               <button class="lane-add-btn" (click)="addNodeToParallelPath($event, step.id, pi)" title="Hinzufügen">
                                 <i class="material-icons">add</i>
                               </button>
@@ -602,41 +602,53 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
               <!-- Gateway expansion — lane columns -->
               @if (step.kind === 'gateway' && !step.collapsed) {
                 @if (step.gatewayType === 'decision' && step.branches?.length) {
-                  <div class="fc-branch-lanes">
-                    @for (branch of step.branches; track branch.id) {
-                      <div class="fc-branch-lane decision">
-                        <div class="fc-lane-hdr">
-                          <span class="fc-lane-label">{{ branch.label }}</span>
-                          @if (branch.condition) { <span class="fc-lane-cond">{{ branch.condition }}</span> }
-                          <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
-                            <i class="material-icons">add</i>
-                          </button>
-                        </div>
-                        <ng-template [ngTemplateOutlet]="fcLaneContent"
-                          [ngTemplateOutletContext]="{ steps: branch.steps, gwId: step.id, branchId: branch.id, pathIdx: null, isLoop: false }">
-                        </ng-template>
+                  <div class="fc-gw-body">
+                    <div class="fc-branch-lanes decision">
+                      <div class="fc-lanes-row">
+                        @for (branch of step.branches; track branch.id) {
+                          <div class="fc-branch-lane decision">
+                            <div class="fc-lane-hdr">
+                              <div class="fc-lane-title-row">
+                                <span class="fc-lane-label">{{ branch.label }}</span>
+                                <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
+                                  <i class="material-icons">add</i>
+                                </button>
+                              </div>
+                              @if (branch.condition) { <span class="fc-lane-cond">{{ branch.condition }}</span> }
+                            </div>
+                            <ng-template [ngTemplateOutlet]="fcLaneContent"
+                              [ngTemplateOutletContext]="{ steps: branch.steps, gwId: step.id, branchId: branch.id, pathIdx: null, isLoop: false }">
+                            </ng-template>
+                          </div>
+                        }
                       </div>
-                    }
+                      <div class="fc-lane-join decision"></div>
+                    </div>
                   </div>
-                  <div class="fc-lane-join decision"></div>
                 }
                 @if (step.gatewayType === 'parallel' && step.parallelPaths?.length) {
-                  <div class="fc-branch-lanes">
-                    @for (path of step.parallelPaths; track $index; let pi = $index) {
-                      <div class="fc-branch-lane parallel">
-                        <div class="fc-lane-hdr">
-                          <span class="fc-lane-label">Pfad {{ pi + 1 }}</span>
-                          <button class="lane-add-btn" (click)="addNodeToParallelPath($event, step.id, pi)" title="Hinzufügen">
-                            <i class="material-icons">add</i>
-                          </button>
-                        </div>
-                        <ng-template [ngTemplateOutlet]="fcLaneContent"
-                          [ngTemplateOutletContext]="{ steps: path, gwId: step.id, branchId: null, pathIdx: pi, isLoop: false }">
-                        </ng-template>
+                  <div class="fc-gw-body">
+                    <div class="fc-branch-lanes parallel">
+                      <div class="fc-lanes-row">
+                        @for (path of step.parallelPaths; track $index; let pi = $index) {
+                          <div class="fc-branch-lane parallel">
+                            <div class="fc-lane-hdr">
+                              <div class="fc-lane-title-row">
+                                <span class="fc-lane-label">{{ step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
+                                <button class="lane-add-btn" (click)="addNodeToParallelPath($event, step.id, pi)" title="Hinzufügen">
+                                  <i class="material-icons">add</i>
+                                </button>
+                              </div>
+                            </div>
+                            <ng-template [ngTemplateOutlet]="fcLaneContent"
+                              [ngTemplateOutletContext]="{ steps: path, gwId: step.id, branchId: null, pathIdx: pi, isLoop: false }">
+                            </ng-template>
+                          </div>
+                        }
                       </div>
-                    }
+                      <div class="fc-lane-join parallel"></div>
+                    </div>
                   </div>
-                  <div class="fc-lane-join parallel"></div>
                 }
                 @if (step.gatewayType === 'loop') {
                   <div class="fc-loop-lane">
@@ -1117,40 +1129,89 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
     }
     .fc-ghost .material-icons { font-size: 16px; color: #009fe3; }
 
-    /* ===== Flowchart branch lane columns ===== */
+    /* ===== Flowchart branch lane columns — free-branch layout ===== */
+
+    /* Scroll wrapper — full width, scrolls when branches overflow */
+    .fc-gw-body { width: 100%; overflow-x: auto; }
+
+    /* Top bar: flex column so join bar (child) always matches its width.
+       min-width: 100% fills the panel; width: max-content grows for many branches. */
     .fc-branch-lanes {
-      display: flex; width: 100%; border: 1px solid #e0e0e0;
-      border-radius: 0 0 6px 6px; overflow: hidden;
+      display: flex; flex-direction: column;
+      min-width: 100%; width: max-content;
+      border-top: 2px solid #e0e0e0;
+      background: transparent;
     }
+    .fc-branch-lanes.decision { border-top-color: #f59e0b; }
+    .fc-branch-lanes.parallel { border-top-color: #7c3aed; }
+
+    /* Row of branch columns inside the lanes container */
+    .fc-lanes-row { display: flex; align-items: flex-start; }
+
+    /* Branch column */
     .fc-branch-lane {
-      flex: 1; min-width: 100px; display: flex; flex-direction: column;
-      border-right: 1px solid #e0e0e0;
+      flex: 1; min-width: 150px; display: flex; flex-direction: column;
+      align-items: stretch; padding: 0 8px; position: relative;
+      background: transparent; border: none;
     }
-    .fc-branch-lane:last-child { border-right: none; }
-    .fc-branch-lane.decision { background: #fffbf0; }
-    .fc-branch-lane.parallel { background: #faf8ff; }
+
+    /* Vertical leg from top bar down to branch header pill */
+    .fc-branch-lane::before {
+      content: ''; position: absolute;
+      top: -2px; left: 50%; transform: translateX(-50%);
+      width: 2px; height: 16px; background: #e0e0e0;
+    }
+    .fc-branch-lanes.decision .fc-branch-lane::before { background: #f59e0b; }
+    .fc-branch-lanes.parallel .fc-branch-lane::before { background: #7c3aed; }
+
+    /* Loop lane — keep bordered container (loop is conceptually different) */
     .fc-loop-lane {
       width: 100%; border: 1px solid #f97316; border-radius: 0 0 6px 6px;
       background: #fff7ed; overflow: hidden;
     }
+
+    /* Branch header pill — column layout: title row on top, condition below */
     .fc-lane-hdr {
-      display: flex; align-items: center; gap: 4px; padding: 4px 8px;
-      border-bottom: 1px solid #e0e0e0; font-size: 11px; font-weight: 600;
+      display: flex; flex-direction: column; align-items: stretch;
+      overflow: hidden;
+      margin-top: 16px; margin-bottom: 8px;
+      padding: 4px 10px; border-radius: 10px;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em;
     }
-    .fc-branch-lane.decision .fc-lane-hdr { background: #fef9e7; color: #f59e0b; }
-    .fc-branch-lane.parallel .fc-lane-hdr { background: #f9f5ff; color: #7c3aed; }
-    .fc-lane-hdr.loop { background: #fff7ed; color: #f97316; border-bottom-color: #fed7aa; }
-    .fc-lane-label { flex: 1; }
-    .fc-lane-cond { font-size: 10px; color: #6c7e93; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70px; }
-    .fc-lane-join { height: 3px; width: 100%; }
+    .fc-branch-lane.decision .fc-lane-hdr {
+      background: #fef3c7; color: #92710c; border: 1px solid rgba(245,158,11,0.4);
+    }
+    .fc-branch-lane.parallel .fc-lane-hdr {
+      background: #ede9fe; color: #6d28d9; border: 1px solid rgba(124,58,237,0.3);
+    }
+    /* Loop header stays horizontal */
+    .fc-lane-hdr.loop {
+      flex-direction: row; align-items: center; gap: 4px;
+      background: #fff7ed; color: #f97316; border-bottom: 1px solid #fed7aa;
+    }
+    /* Title row: label + add button side by side */
+    .fc-lane-title-row { display: flex; align-items: center; gap: 4px; }
+    .fc-lane-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Condition — sits below the title, smaller and non-bold */
+    .fc-lane-cond {
+      display: block; margin-top: 2px;
+      font-size: 9px; font-weight: 400; font-style: italic;
+      text-transform: none; letter-spacing: 0;
+      color: inherit; opacity: 0.7;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Bottom merge bar — flex column child of fc-branch-lanes, stretches to match width automatically */
+    .fc-lane-join { height: 2px; margin-top: 4px; }
     .fc-lane-join.decision { background: #f59e0b; }
     .fc-lane-join.parallel { background: #7c3aed; }
 
     /* Inner nodes inside flowchart lane columns */
     .fc-inner-node {
       display: flex; align-items: center; gap: 5px; padding: 5px 8px;
-      background: white; border: 1px solid #e0e0e0; border-radius: 4px;
-      margin: 3px 4px; cursor: pointer; position: relative; font-size: 11px;
+      background: white; border: 1px solid #e0e0e0; border-radius: 6px;
+      margin: 2px 6px; cursor: pointer; position: relative; font-size: 11px;
     }
     .fc-inner-node:hover { border-color: #009fe3; }
     .fc-inner-node.selected { border-color: #009fe3; background: #e6f4fd; }

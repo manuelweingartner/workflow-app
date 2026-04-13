@@ -177,8 +177,8 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             @for (path of step.parallelPaths || []; track $index; let pi = $index) {
               <div class="parallel-edit-item">
                 <div class="ps-dot" [class]="path[0]?.status || 'pending'"></div>
-                <input type="text" [value]="path[0]?.title || ''"
-                       (change)="updateParallelStepTitle(step.id, pi, path[0]?.id ?? '', $event)"
+                <input type="text" [value]="step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1)"
+                       (change)="updateParallelPathLabel(step.id, pi, $event)"
                        class="branch-input" [placeholder]="'Pfad ' + (pi + 1)" />
                 <span class="branch-step-count">{{ path.length }} Schritt(e)</span>
                 @if (step.status !== 'completed') {
@@ -849,11 +849,16 @@ export class StepDetailComponent {
     if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     if (!updated.parallelPaths) updated.parallelPaths = [];
+    if (!updated.parallelPathLabels) {
+      updated.parallelPathLabels = updated.parallelPaths.map((_, i) => 'Pfad ' + (i + 1));
+    }
+    const newIdx = updated.parallelPaths.length + 1;
     updated.parallelPaths.push([{
-      id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Pfad', status: 'pending',
+      id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Schritt', status: 'pending',
       responsible: '', category: '', contextLinks: [], tasks: [], inputs: [], actions: [],
       completionCriteria: [], conditionals: [],
     }]);
+    updated.parallelPathLabels.push('Pfad ' + newIdx);
     this.svc.updateStep(updated);
   }
 
@@ -862,16 +867,20 @@ export class StepDetailComponent {
     if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
     updated.parallelPaths?.splice(pathIndex, 1);
+    updated.parallelPathLabels?.splice(pathIndex, 1);
     this.svc.updateStep(updated);
   }
 
-  updateParallelStepTitle(stepId: string, pi: number, psId: string, event: Event) {
+  updateParallelPathLabel(stepId: string, pi: number, event: Event) {
     const val = (event.target as HTMLInputElement).value;
     const step = this.svc.selectedStep();
     if (!step || step.id !== stepId) return;
     const updated = structuredClone(step);
-    const ps = updated.parallelPaths?.[pi]?.find(p => p.id === psId);
-    if (ps) { ps.title = val; this.svc.updateStep(updated); }
+    if (!updated.parallelPathLabels) {
+      updated.parallelPathLabels = (updated.parallelPaths ?? []).map((_, i) => 'Pfad ' + (i + 1));
+    }
+    updated.parallelPathLabels[pi] = val;
+    this.svc.updateStep(updated);
   }
 
   updateParallelStepResp(stepId: string, pi: number, psId: string, event: Event) {

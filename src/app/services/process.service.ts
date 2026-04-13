@@ -341,9 +341,10 @@ export class ProcessService {
         { id: crypto.randomUUID(), label: 'Nein', condition: '', steps: [] },
       ] : undefined,
       parallelPaths: nodeType === 'parallel' ? [
-        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 1', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 2', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Schritt', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Schritt', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
       ] : undefined,
+      parallelPathLabels: nodeType === 'parallel' ? ['Pfad 1', 'Pfad 2'] : undefined,
       loopBody:      nodeType === 'loop' ? [] : undefined,
       loopCondition: nodeType === 'loop' ? '' : undefined,
     };
@@ -403,9 +404,10 @@ export class ProcessService {
         { id: crypto.randomUUID(), label: 'Nein', condition: '', steps: [] },
       ] : undefined,
       parallelPaths: nodeType === 'parallel' ? [
-        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 1', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Pfad 2', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Schritt', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: crypto.randomUUID(), number: 'NEU', title: 'Neuer Schritt', status: 'pending', responsible: '', category: 'Allgemein', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
       ] : undefined,
+      parallelPathLabels: nodeType === 'parallel' ? ['Pfad 1', 'Pfad 2'] : undefined,
       loopBody:      nodeType === 'loop' ? [] : undefined,
       loopCondition: nodeType === 'loop' ? '' : undefined,
     };

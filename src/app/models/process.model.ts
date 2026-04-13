@@ -87,7 +87,8 @@ export interface ProcessStep {
 
   // Gateway data (populated when kind='gateway')
   branches?: Branch[];             // for gatewayType='decision' — each branch owns its steps
-  parallelPaths?: ProcessStep[][];  // for gatewayType='parallel' — each path is a step sequence
+  parallelPaths?: ProcessStep[][];   // for gatewayType='parallel' — each path is a step sequence
+  parallelPathLabels?: string[];     // display names for parallel paths
   loopBody?: ProcessStep[];         // for gatewayType='loop' — steps inside the loop iteration
   loopCondition?: string;
 
