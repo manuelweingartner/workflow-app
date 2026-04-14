@@ -30,22 +30,73 @@ import { Process } from '../../models/process.model';
           <span class="greeting-title">Guten Tag</span>
           <span class="greeting-sub">Willkommen bei CMI Workflow</span>
         </div>
-        <div class="card stat-card" (click)="svc.openTab('geschaeft', '1')">
+        <div class="card stat-card">
           <span class="stat-label">Heute fällige und abgelaufene Aufgaben</span>
           <span class="stat-value">{{ overdueTaskCount() }}</span>
         </div>
         <div class="card stat-card">
-          <span class="stat-label">Laufende Prozesse</span>
-          <span class="stat-value">{{ runningProcessCount() }}</span>
+          <span class="stat-label">Laufende Instanzen</span>
+          <span class="stat-value stat-running">{{ svc.allInstances().length }}</span>
         </div>
       </div>
 
-      <!-- Meine Prozesse -->
+      <!-- Laufende Instanzen -->
+      @if (svc.allInstances().length > 0) {
+        <div class="section">
+          <h2>
+            <i class="material-icons section-icon">play_circle</i>
+            Laufende Workflow-Instanzen
+          </h2>
+          <div class="instance-grid">
+            @for (inst of svc.allInstances(); track inst.id) {
+              <div class="card instance-card" (click)="svc.openTab('prozess', inst.id)">
+                <div class="inst-header">
+                  <div class="inst-title-row">
+                    <span class="inst-title">{{ inst.title }}</span>
+                    <span class="inst-state-badge" [class]="inst.instanceState ?? 'running'">
+                      {{ stateLabel(inst.instanceState ?? 'running') }}
+                    </span>
+                  </div>
+                  <span class="inst-template">
+                    <i class="material-icons">account_tree</i>
+                    {{ templateName(inst.templateId) }}
+                  </span>
+                </div>
+                <div class="inst-meta">
+                  <span class="inst-meta-item">
+                    <i class="material-icons">person</i>{{ inst.startedBy }}
+                  </span>
+                  <span class="inst-meta-item">
+                    <i class="material-icons">calendar_today</i>Gestartet: {{ inst.startedAt }}
+                  </span>
+                </div>
+                @if (currentStepTitle(inst); as stepTitle) {
+                  <div class="inst-current-step">
+                    <i class="material-icons">radio_button_checked</i>
+                    <span>{{ stepTitle }}</span>
+                  </div>
+                }
+                <div class="inst-progress">
+                  <div class="inst-progress-bar">
+                    <div class="inst-progress-fill" [style.width.%]="instanceProgressPercent(inst)"></div>
+                  </div>
+                  <span class="inst-progress-text">{{ instanceDoneSteps(inst) }}/{{ instanceTotalSteps(inst) }} Schritte</span>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Workflow-Vorlagen -->
       <div class="section">
-        <h2>Meine Prozesse</h2>
+        <h2>
+          <i class="material-icons section-icon">account_tree</i>
+          Workflow-Vorlagen
+        </h2>
         <div class="process-grid">
-          @for (proc of svc.processes(); track proc.id) {
-            <div class="card process-card" (click)="svc.openTab('prozess', proc.id)">
+          @for (proc of svc.allTemplates(); track proc.id) {
+            <div class="card process-card">
               <div class="proc-header">
                 <i class="material-icons proc-icon">account_tree</i>
                 <div class="proc-title-col">
@@ -53,14 +104,10 @@ import { Process } from '../../models/process.model';
                   <span class="proc-owner">&#128100; {{ proc.processOwner.name }}</span>
                 </div>
               </div>
-              <div class="proc-progress">
-                <div class="proc-progress-bar">
-                  <div class="proc-progress-fill" [style.width.%]="progressPercent(proc)"></div>
-                </div>
-                <span class="proc-progress-text">{{ doneSteps(proc) }}/{{ proc.steps.length }} Schritte</span>
-              </div>
-              <div class="proc-status">
-                <span class="proc-status-badge" [class]="currentStatus(proc)">{{ statusLabel(currentStatus(proc)) }}</span>
+              <div class="proc-actions">
+                <button class="btn-open" (click)="svc.openTab('prozess', proc.id)">
+                  <i class="material-icons">visibility</i> Öffnen
+                </button>
               </div>
             </div>
           }
@@ -69,7 +116,10 @@ import { Process } from '../../models/process.model';
 
       <!-- Meine Geschäfte -->
       <div class="section">
-        <h2>Meine Geschäfte</h2>
+        <h2>
+          <i class="material-icons section-icon">folder</i>
+          Meine Geschäfte
+        </h2>
         <div class="geschaeft-grid">
           @for (d of svc.dossiers(); track d.id) {
             <div class="card geschaeft-card" (click)="svc.openTab('geschaeft', d.id)">
@@ -88,7 +138,10 @@ import { Process } from '../../models/process.model';
 
       <!-- Meine Sitzungen -->
       <div class="section">
-        <h2>Nächste Sitzungen</h2>
+        <h2>
+          <i class="material-icons section-icon">event</i>
+          Nächste Sitzungen
+        </h2>
         <div class="geschaeft-grid">
           @for (s of svc.sitzungen(); track s.id) {
             <div class="card geschaeft-card sitzung" (click)="svc.openTab('sitzung', s.id)">
@@ -151,27 +204,64 @@ import { Process } from '../../models/process.model';
     .stat-card:hover { box-shadow: 0 3px 8px rgba(0,0,0,0.18); }
     .stat-label { display: block; font-size: 13px; color: #6c7e93; margin-bottom: 8px; }
     .stat-value { display: block; font-size: 36px; font-weight: 300; color: #353c46; }
+    .stat-running { color: #009fe3; }
 
     .section { margin-bottom: 28px; }
-    .section h2 { font-size: 1rem; font-weight: 500; color: #353c46; margin: 0 0 12px; }
+    .section h2 {
+      font-size: 1rem; font-weight: 500; color: #353c46; margin: 0 0 12px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .section-icon { font-size: 18px; color: #6c7e93; }
 
-    /* Process cards */
-    .process-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-    .process-card { padding: 16px 20px; cursor: pointer; transition: box-shadow 0.15s; }
-    .process-card:hover { box-shadow: 0 3px 8px rgba(0,0,0,0.18); }
+    /* Instance cards */
+    .instance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+    .instance-card { padding: 16px 20px; cursor: pointer; transition: box-shadow 0.15s; border-left: 4px solid #009fe3; }
+    .instance-card:hover { box-shadow: 0 3px 8px rgba(0,0,0,0.18); }
+
+    .inst-header { margin-bottom: 8px; }
+    .inst-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .inst-title { font-size: 14px; font-weight: 500; color: #353c46; flex: 1; }
+    .inst-state-badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; flex-shrink: 0; }
+    .inst-state-badge.running { background: #e6f4fd; color: #009fe3; }
+    .inst-state-badge.completed { background: #eef7ea; color: #3f971a; }
+    .inst-state-badge.paused { background: #fff8e1; color: #f59e0b; }
+    .inst-state-badge.cancelled { background: #fdecea; color: #8c0909; }
+
+    .inst-template { font-size: 12px; color: #6c7e93; display: flex; align-items: center; gap: 4px; }
+    .inst-template .material-icons { font-size: 14px; }
+
+    .inst-meta { display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
+    .inst-meta-item { font-size: 12px; color: #6c7e93; display: flex; align-items: center; gap: 3px; }
+    .inst-meta-item .material-icons { font-size: 14px; }
+
+    .inst-current-step {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+      font-size: 12px; color: #009fe3; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;
+    }
+    .inst-current-step .material-icons { font-size: 14px; }
+
+    .inst-progress { display: flex; align-items: center; gap: 8px; }
+    .inst-progress-bar { flex: 1; height: 5px; background: #ebebed; border-radius: 3px; overflow: hidden; }
+    .inst-progress-fill { height: 100%; background: #009fe3; border-radius: 3px; transition: width 0.3s; }
+    .inst-progress-text { font-size: 11px; color: #6c7e93; white-space: nowrap; }
+
+    /* Process (template) cards */
+    .process-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .process-card { padding: 16px 20px; }
     .proc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-    .proc-icon { font-size: 28px; color: #009fe3; }
-    .proc-title-col { display: flex; flex-direction: column; }
+    .proc-icon { font-size: 28px; color: #6c7e93; }
+    .proc-title-col { display: flex; flex-direction: column; flex: 1; }
     .proc-title { font-size: 14px; color: #353c46; font-weight: 400; }
     .proc-owner { font-size: 12px; color: #6c7e93; }
-    .proc-progress { margin-bottom: 8px; }
-    .proc-progress-bar { height: 6px; background: #ebebed; border-radius: 3px; overflow: hidden; }
-    .proc-progress-fill { height: 100%; background: #3f971a; border-radius: 3px; transition: width 0.3s; }
-    .proc-progress-text { font-size: 11px; color: #6c7e93; }
-    .proc-status-badge { font-size: 11px; padding: 2px 10px; border-radius: 12px; }
-    .proc-status-badge.in-progress { background: #e6f4fd; color: #009fe3; }
-    .proc-status-badge.completed { background: #eef7ea; color: #3f971a; }
-    .proc-status-badge.pending { background: #f4f5f6; color: #6c7e93; }
+    .proc-actions { display: flex; gap: 8px; }
+    .btn-open {
+      display: flex; align-items: center; gap: 4px; padding: 5px 12px;
+      background: #f4f5f6; border: 1px solid #dde2e7; border-radius: 4px;
+      font-size: 12px; color: #353c46; cursor: pointer; font-family: inherit;
+      transition: background 0.15s;
+    }
+    .btn-open:hover { background: #e6f4fd; border-color: #009fe3; color: #009fe3; }
+    .btn-open .material-icons { font-size: 15px; }
 
     /* Geschäft / Sitzung list */
     .geschaeft-grid { display: flex; flex-direction: column; gap: 8px; }
@@ -195,31 +285,49 @@ import { Process } from '../../models/process.model';
 export class DashboardComponent {
   svc = inject(ProcessService);
 
-  doneSteps(proc: Process): number {
-    return proc.steps.filter((s) => s.status === 'completed').length;
+  templateName(templateId: string | undefined): string {
+    if (!templateId) return '—';
+    return this.svc.allTemplates().find((p) => p.id === templateId)?.title ?? templateId;
   }
 
-  progressPercent(proc: Process): number {
-    return proc.steps.length > 0 ? (this.doneSteps(proc) / proc.steps.length) * 100 : 0;
+  currentStepTitle(proc: Process): string {
+    const flat = this.flattenSteps(proc.steps);
+    return flat.find((s) => s.status === 'in-progress')?.title ?? '';
   }
 
-  currentStatus(proc: Process): string {
-    if (proc.steps.every((s) => s.status === 'completed')) return 'completed';
-    if (proc.steps.some((s) => s.status === 'in-progress')) return 'in-progress';
-    return 'pending';
+  instanceDoneSteps(proc: Process): number {
+    return this.flattenSteps(proc.steps).filter((s) => s.status === 'completed').length;
   }
 
-  statusLabel(s: string): string {
-    return { completed: 'Abgeschlossen', 'in-progress': 'In Bearbeitung', pending: 'Ausstehend' }[s] ?? s;
+  instanceTotalSteps(proc: Process): number {
+    return this.flattenSteps(proc.steps).length;
+  }
+
+  instanceProgressPercent(proc: Process): number {
+    const total = this.instanceTotalSteps(proc);
+    return total > 0 ? (this.instanceDoneSteps(proc) / total) * 100 : 0;
+  }
+
+  stateLabel(state: string): string {
+    return { running: 'Laufend', completed: 'Abgeschlossen', paused: 'Pausiert', cancelled: 'Abgebrochen' }[state] ?? state;
+  }
+
+  // Shallow flatten: only work steps (no gateways), includes branch/path/loop steps
+  private flattenSteps(steps: any[]): any[] {
+    const result: any[] = [];
+    for (const s of steps) {
+      if (s.kind !== 'gateway') result.push(s);
+      for (const b of s.branches ?? []) result.push(...this.flattenSteps(b.steps));
+      for (const p of s.parallelPaths ?? []) result.push(...this.flattenSteps(p));
+      if (s.loopBody) result.push(...this.flattenSteps(s.loopBody));
+      if (s.subSteps) result.push(...this.flattenSteps(s.subSteps));
+    }
+    return result;
   }
 
   overdueTaskCount = computed(() => {
-    return this.svc.processes().reduce((count, proc) =>
-      count + proc.steps.reduce((c, step) =>
-        c + step.tasks.filter((t) => t.status !== 'done' && t.dueDate).length, 0), 0);
-  });
-
-  runningProcessCount = computed(() => {
-    return this.svc.processes().filter((p) => p.steps.some((s) => s.status === 'in-progress')).length;
+    return this.svc.allInstances().reduce((count, proc) =>
+      count + this.flattenSteps(proc.steps).reduce((c: number, step: any) =>
+        c + step.tasks.filter((t: any) => t.status !== 'done' && t.dueDate).length, 0), 0);
   });
 }

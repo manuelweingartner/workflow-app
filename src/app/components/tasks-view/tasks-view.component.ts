@@ -13,33 +13,37 @@ import { ProcessService } from '../../services/process.service';
           <span class="stat-value">{{ svc.allTasks().length }}</span>
           <span class="stat-label">Total</span>
         </div>
-        <div class="stat done">
-          <span class="stat-value">{{ countByStatus('done') }}</span>
-          <span class="stat-label">Erledigt</span>
-        </div>
-        <div class="stat in-progress">
-          <span class="stat-value">{{ countByStatus('in-progress') }}</span>
-          <span class="stat-label">In Arbeit</span>
-        </div>
-        <div class="stat open">
-          <span class="stat-value">{{ countByStatus('open') }}</span>
-          <span class="stat-label">Offen</span>
-        </div>
-      </div>
-
-      <div class="filter-tabs">
-        @for (f of filters; track f.value) {
-          <button class="filter-tab" [class.active]="f.value === activeFilter()" (click)="activeFilter.set(f.value)">
-            {{ f.label }}
-          </button>
+        @if (!svc.isTemplateMode()) {
+          <div class="stat done">
+            <span class="stat-value">{{ countByStatus('done') }}</span>
+            <span class="stat-label">Erledigt</span>
+          </div>
+          <div class="stat in-progress">
+            <span class="stat-value">{{ countByStatus('in-progress') }}</span>
+            <span class="stat-label">In Arbeit</span>
+          </div>
+          <div class="stat open">
+            <span class="stat-value">{{ countByStatus('open') }}</span>
+            <span class="stat-label">Offen</span>
+          </div>
         }
       </div>
+
+      @if (!svc.isTemplateMode()) {
+        <div class="filter-tabs">
+          @for (f of filters; track f.value) {
+            <button class="filter-tab" [class.active]="f.value === activeFilter()" (click)="activeFilter.set(f.value)">
+              {{ f.label }}
+            </button>
+          }
+        </div>
+      }
 
       <div class="card">
       <table class="task-table">
         <thead>
           <tr>
-            <th>Status</th>
+            @if (!svc.isTemplateMode()) { <th>Status</th> }
             <th>Aufgabe</th>
             <th>Zuständig</th>
             <th>Prozessschritt</th>
@@ -48,11 +52,13 @@ import { ProcessService } from '../../services/process.service';
         <tbody>
           @for (item of filteredTasks(); track item.task.id) {
             <tr>
-              <td>
-                <button class="status-badge-btn" [class]="item.task.status" (click)="svc.toggleTaskStatus(item.stepId, item.task.id)">
-                  {{ statusLabel(item.task.status) }}
-                </button>
-              </td>
+              @if (!svc.isTemplateMode()) {
+                <td>
+                  <button class="status-badge-btn" [class]="item.task.status" (click)="svc.toggleTaskStatus(item.stepId, item.task.id)">
+                    {{ statusLabel(item.task.status) }}
+                  </button>
+                </td>
+              }
               <td class="task-title">{{ item.task.title }}</td>
               <td class="task-assignee">{{ item.task.assignee }}</td>
               <td>

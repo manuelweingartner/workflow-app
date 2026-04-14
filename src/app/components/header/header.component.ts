@@ -8,7 +8,7 @@ import { AppTab } from '../../models/process.model';
   template: `
     <!-- App Bar (cmi-app-bar) -->
     <div class="app-bar">
-      <div class="cmi-logo">
+      <div class="cmi-logo" (click)="svc.goToDashboard()" title="Dashboard">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="4 7 17 10" width="50" height="30"><path fill="#ffffff" d="M19.78,15.42a.67.67,0,0,1-1.34,0V8.66a.67.67,0,1,1,1.34,0Zm-3.38,0a.67.67,0,0,1-1.34,0V11.2l-1,2.26a.74.74,0,0,1-1.36,0l-1-2.26v4.22a.67.67,0,0,1-1.33,0V8.66A.68.68,0,0,1,11.06,8h.18c.43,0,.59.27.73.58l1.43,3.22,1.43-3.22c.14-.31.3-.58.73-.58h.17a.68.68,0,0,1,.67.67Zm-9.95-.66h.1a.93.93,0,0,0,1-.78.67.67,0,0,1,1.33.07v.13a2.28,2.28,0,0,1-2.3,1.9h-.1a2.26,2.26,0,0,1-2.31-2.25V10.24A2.27,2.27,0,0,1,6.45,8h.1A2.25,2.25,0,0,1,8.84,9.91a.38.38,0,0,1,0,.12.66.66,0,0,1-.68.65.63.63,0,0,1-.65-.58.93.93,0,0,0-1-.78h-.1a.94.94,0,0,0-1,.92v3.59a.94.94,0,0,0,1,.93"/></svg>
       </div>
       <div class="tab-bar">
@@ -89,7 +89,9 @@ import { AppTab } from '../../models/process.model';
     .cmi-logo {
       width: 82px; height: 100%; display: flex;
       align-items: center; justify-content: center; flex-shrink: 0;
+      cursor: pointer;
     }
+    .cmi-logo:hover { opacity: 0.8; }
     .tab-bar {
       display: flex; align-items: center; height: 100%;
       min-width: 0; overflow-x: auto; scrollbar-width: none;

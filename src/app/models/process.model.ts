@@ -33,6 +33,22 @@ export interface ContextLink {
 }
 
 // ============================================================
+// Workflow Event — audit log entry for a process instance
+// ============================================================
+
+export type WorkflowEventType = 'started' | 'step_completed' | 'branch_chosen' | 'task_added' | 'note_added';
+
+export interface WorkflowEvent {
+  id: string;
+  timestamp: string;         // ISO-DateTime
+  type: WorkflowEventType;
+  description: string;       // human-readable text for audit log
+  actor: string;             // name of the user who triggered the event
+  stepId?: string;
+  stepTitle?: string;
+}
+
+// ============================================================
 // Process — now a standalone top-level entity
 // ============================================================
 
@@ -41,6 +57,13 @@ export interface Process {
   title: string;
   processOwner: ProcessOwner;
   steps: ProcessStep[];
+  // Template vs. Instance
+  kind?: 'template' | 'instance';
+  templateId?: string;           // for instances: references the template process id
+  startedAt?: string;            // ISO-Date, set when instance is created
+  startedBy?: string;            // name of the user who started this instance
+  instanceState?: 'running' | 'completed' | 'cancelled' | 'paused';
+  events?: WorkflowEvent[];      // audit log (only on instances)
 }
 
 export interface ProcessOwner {
@@ -84,6 +107,7 @@ export interface ProcessStep {
 
   // For kind='gateway': what type of control flow?
   gatewayType?: GatewayType;      // 'decision' | 'parallel' | 'loop'
+  chosenBranchId?: string;        // for gatewayType='decision' on instances: which branch was taken
 
   // Gateway data (populated when kind='gateway')
   branches?: Branch[];             // for gatewayType='decision' — each branch owns its steps
@@ -182,6 +206,10 @@ export interface Task {
   assignee: string;
   status: 'open' | 'in-progress' | 'done';
   dueDate?: string;
+  // Optional task result (captured when completing the task)
+  resultType?: 'boolean' | 'choice' | 'text';
+  resultOptions?: string[];   // for resultType='choice'
+  resultValue?: string;       // stored result value
 }
 
 export interface Input {

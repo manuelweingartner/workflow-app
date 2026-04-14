@@ -8,7 +8,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
   standalone: true,
   imports: [NgTemplateOutlet],
   template: `
-    <div class="overview" [class.fullscreen]="fullscreen()">
+    <div class="overview" [class.fullscreen]="fullscreen()" [class.template-mode]="svc.isTemplateMode()">
       <div class="overview-header">
         <div class="overview-title-row">
           <h2>Prozessübersicht</h2>
@@ -32,31 +32,45 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
       </div>
 
       <div class="progress-section">
-        <div class="progress-label">
-          <span>Gesamtprozess</span>
-          <span>{{ svc.progress().done }} von {{ svc.progress().total }} Schritten</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="(svc.progress().done / svc.progress().total) * 100"></div>
-        </div>
-        @if (svc.contextProgress().total < svc.progress().total) {
-          <div class="progress-label context-progress-label">
-            <span>Dieses Geschäft</span>
-            <span>{{ svc.contextProgress().done }} von {{ svc.contextProgress().total }} Schritten</span>
+        @if (svc.isTemplateMode()) {
+          <!-- Template mode: no progress, just step count -->
+          <div class="template-step-count">
+            <i class="material-icons">account_tree</i>
+            {{ svc.progress().total }} Schritte definiert
           </div>
-          <div class="progress-bar context-bar">
-            <div class="progress-fill context-fill" [style.width.%]="svc.contextProgress().total > 0 ? (svc.contextProgress().done / svc.contextProgress().total) * 100 : 0"></div>
+          <div class="progress-legend">
+            <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#009fe3">bolt</i></span> Aktivität</span>
+            <span class="legend-item"><span class="gw-dot decision"></span> Entscheidung</span>
+            <span class="legend-item"><span class="gw-dot parallel"></span> Parallel</span>
+            <span class="legend-item"><span class="gw-dot loop"></span> Schleife</span>
+          </div>
+        } @else {
+          <div class="progress-label">
+            <span>Gesamtprozess</span>
+            <span>{{ svc.progress().done }} von {{ svc.progress().total }} Schritten</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width.%]="(svc.progress().done / svc.progress().total) * 100"></div>
+          </div>
+          @if (svc.contextProgress().total < svc.progress().total) {
+            <div class="progress-label context-progress-label">
+              <span>Dieses Geschäft</span>
+              <span>{{ svc.contextProgress().done }} von {{ svc.contextProgress().total }} Schritten</span>
+            </div>
+            <div class="progress-bar context-bar">
+              <div class="progress-fill context-fill" [style.width.%]="svc.contextProgress().total > 0 ? (svc.contextProgress().done / svc.contextProgress().total) * 100 : 0"></div>
+            </div>
+          }
+          <div class="progress-legend">
+            <span class="legend-item"><span class="dot completed"></span> Abgeschlossen</span>
+            <span class="legend-item"><span class="dot in-progress"></span> In Bearbeitung</span>
+            <span class="legend-item"><span class="dot pending"></span> Ausstehend</span>
+            <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#009fe3">bolt</i></span> Aktivität</span>
+            <span class="legend-item"><span class="gw-dot decision"></span> Entscheidung</span>
+            <span class="legend-item"><span class="gw-dot parallel"></span> Parallel</span>
+            <span class="legend-item"><span class="gw-dot loop"></span> Schleife</span>
           </div>
         }
-        <div class="progress-legend">
-          <span class="legend-item"><span class="dot completed"></span> Abgeschlossen</span>
-          <span class="legend-item"><span class="dot in-progress"></span> In Bearbeitung</span>
-          <span class="legend-item"><span class="dot pending"></span> Ausstehend</span>
-          <span class="legend-item"><span class="dot-icon"><i class="material-icons" style="font-size:10px;color:#009fe3">bolt</i></span> Aktivität</span>
-          <span class="legend-item"><span class="gw-dot decision"></span> Entscheidung</span>
-          <span class="legend-item"><span class="gw-dot parallel"></span> Parallel</span>
-          <span class="legend-item"><span class="gw-dot loop"></span> Schleife</span>
-        </div>
       </div>
 
     <!-- ===== RECURSIVE TEMPLATE: sequence lane steps ===== -->
@@ -86,12 +100,19 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
               @if (bs.gatewayType === 'decision' && bs.branches?.length) {
                 <div class="gw-lanes">
                   @for (sub of bs.branches; track sub.id) {
-                    <div class="gw-lane decision">
+                    <div class="gw-lane decision"
+                      [class.branch-chosen]="bs.chosenBranchId === sub.id"
+                      [class.branch-unchosen]="bs.chosenBranchId && bs.chosenBranchId !== sub.id">
                       <div class="gw-lane-hdr">
                         <span class="gw-lane-label">{{ sub.label }}</span>
-                        <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
-                          <i class="material-icons">add</i>
-                        </button>
+                        @if (bs.chosenBranchId === sub.id) {
+                          <span class="chosen-badge"><i class="material-icons">check_circle</i> Gewählt</span>
+                        }
+                        @if (!bs.chosenBranchId) {
+                          <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
+                            <i class="material-icons">add</i>
+                          </button>
+                        }
                       </div>
                       @if (!sub.steps.length) { <div class="lane-empty">Kein Schritt</div> }
                       <ng-template [ngTemplateOutlet]="seqLaneSteps"
@@ -146,17 +167,17 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
             <div class="swim-step-icon">
               @if (bs.stepType === 'activity') {
                 <svg width="16" height="16" viewBox="0 0 20 20">
-                  @if (bs.status === 'completed') {
+                  @if (!svc.isTemplateMode() && bs.status === 'completed') {
                     <circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/>
-                  } @else if (bs.status === 'in-progress') {
+                  } @else if (!svc.isTemplateMode() && bs.status === 'in-progress') {
                     <circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2" stroke-dasharray="4 2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/>
                   } @else {
                     <circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2" stroke-dasharray="4 2"/>
                   }
                 </svg>
-              } @else if (bs.status === 'completed') {
+              } @else if (!svc.isTemplateMode() && bs.status === 'completed') {
                 <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
-              } @else if (bs.status === 'in-progress') {
+              } @else if (!svc.isTemplateMode() && bs.status === 'in-progress') {
                 <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
               } @else {
                 <svg width="16" height="16" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
@@ -222,12 +243,19 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
           @if (bs.gatewayType === 'decision' && bs.branches?.length) {
             <div class="fc-inner-lanes">
               @for (sub of bs.branches; track sub.id) {
-                <div class="fc-inner-lane decision">
+                <div class="fc-inner-lane decision"
+                  [class.branch-chosen]="bs.chosenBranchId === sub.id"
+                  [class.branch-unchosen]="bs.chosenBranchId && bs.chosenBranchId !== sub.id">
                   <div class="fc-inner-lane-hdr">
                     <span>{{ sub.label }}</span>
-                    <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
-                      <i class="material-icons">add</i>
-                    </button>
+                    @if (bs.chosenBranchId === sub.id) {
+                      <span class="chosen-badge-fc"><i class="material-icons">check_circle</i></span>
+                    }
+                    @if (!bs.chosenBranchId) {
+                      <button class="lane-add-btn" (click)="addNodeToBranch($event, bs.id, sub.id)" title="Hinzufügen">
+                        <i class="material-icons">add</i>
+                      </button>
+                    }
                   </div>
                   <ng-template [ngTemplateOutlet]="fcLaneContent"
                     [ngTemplateOutletContext]="{ steps: sub.steps, gwId: bs.id, branchId: sub.id, pathIdx: null, isLoop: false }">
@@ -318,13 +346,20 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                     @if (step.gatewayType === 'decision' && step.branches?.length) {
                       <div class="gw-lanes">
                         @for (branch of step.branches; track branch.id) {
-                          <div class="gw-lane decision">
+                          <div class="gw-lane decision"
+                            [class.branch-chosen]="step.chosenBranchId === branch.id"
+                            [class.branch-unchosen]="step.chosenBranchId && step.chosenBranchId !== branch.id">
                             <div class="gw-lane-hdr">
                               <span class="gw-lane-label">{{ branch.label }}</span>
+                              @if (step.chosenBranchId === branch.id) {
+                                <span class="chosen-badge"><i class="material-icons">check_circle</i> Gewählt</span>
+                              }
                               @if (branch.condition) { <span class="gw-lane-cond">{{ branch.condition }}</span> }
-                              <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
-                                <i class="material-icons">add</i>
-                              </button>
+                              @if (!step.chosenBranchId) {
+                                <button class="lane-add-btn" (click)="addNodeToBranch($event, step.id, branch.id)" title="Hinzufügen">
+                                  <i class="material-icons">add</i>
+                                </button>
+                              }
                             </div>
                             @if (!branch.steps.length) { <div class="lane-empty">Kein Schritt</div> }
                             <ng-template [ngTemplateOutlet]="seqLaneSteps"
@@ -397,19 +432,19 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                     <div class="status-icon" [class]="step.status">
                       @if (step.stepType === 'activity') {
                         <svg width="20" height="20" viewBox="0 0 20 20">
-                          @if (step.status === 'completed') {
+                          @if (!svc.isTemplateMode() && step.status === 'completed') {
                             <circle cx="10" cy="10" r="9" fill="#3f971a"/>
                             <path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/>
-                          } @else if (step.status === 'in-progress') {
+                          } @else if (!svc.isTemplateMode() && step.status === 'in-progress') {
                             <circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2" stroke-dasharray="4 2"/>
                             <circle cx="10" cy="10" r="4" fill="#009fe3"/>
                           } @else {
                             <circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2" stroke-dasharray="4 2"/>
                           }
                         </svg>
-                      } @else if (step.status === 'completed') {
+                      } @else if (!svc.isTemplateMode() && step.status === 'completed') {
                         <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
-                      } @else if (step.status === 'in-progress') {
+                      } @else if (!svc.isTemplateMode() && step.status === 'in-progress') {
                         <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
                       } @else {
                         <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
@@ -881,6 +916,24 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
     .gw-join-bar.parallel { background: #7c3aed; }
     .gw-section.nested .gw-join-bar { margin: 0 0 2px; }
 
+    /* Branch chosen/unchosen highlighting */
+    .gw-lane.branch-chosen { background: #f0fdf4 !important; border-left: 3px solid #3f971a; }
+    .gw-lane.branch-chosen .gw-lane-hdr { background: #dcfce7 !important; }
+    .gw-lane.branch-unchosen { opacity: 0.38; pointer-events: none; }
+    .chosen-badge {
+      display: inline-flex; align-items: center; gap: 2px;
+      font-size: 10px; color: #3f971a; font-weight: 600;
+      background: #dcfce7; border-radius: 10px; padding: 1px 6px;
+    }
+    .chosen-badge .material-icons { font-size: 12px; }
+    .fc-inner-lane.branch-chosen { background: #f0fdf4 !important; border-left: 3px solid #3f971a; }
+    .fc-inner-lane.branch-chosen .fc-inner-lane-hdr { background: #dcfce7 !important; color: #3f971a !important; }
+    .fc-inner-lane.branch-unchosen { opacity: 0.38; pointer-events: none; }
+    .chosen-badge-fc {
+      display: inline-flex; align-items: center; color: #3f971a;
+    }
+    .chosen-badge-fc .material-icons { font-size: 14px; }
+
     /* Shared helpers */
     .lane-add-btn { background: none; border: 1px dashed currentColor; border-radius: 4px; cursor: pointer; padding: 1px 3px; line-height: 1; margin-left: auto; flex-shrink: 0; opacity: 0.6; }
     .lane-add-btn:hover { opacity: 1; }
@@ -1278,6 +1331,40 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
     }
     .fc-node-collapse:hover { color: #586475; }
     .fc-node-collapse .material-icons { font-size: 16px; }
+
+    /* Template-step-count (header) */
+    .template-step-count {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #6c7e93; padding: 4px 0 8px;
+    }
+    .template-step-count .material-icons { font-size: 16px; }
+
+    /* ============================================================
+       TEMPLATE MODE — no execution state, only structure
+       ============================================================ */
+    /* Reset all step status dots to a neutral grey */
+    /* Connector lines: no colour */
+    .template-mode .connector-line.completed,
+    .template-mode .connector-line.in-progress {
+      background: #bdbdbd !important;
+    }
+    /* Status label: hide or neutral */
+    .template-mode .step-status-label { display: none; }
+    /* Flowchart node status dot: neutral */
+    .template-mode .fc-node-status.completed,
+    .template-mode .fc-node-status.in-progress { background: #bdbdbd !important; }
+    /* Flowchart node: no completed highlight */
+    .template-mode .fc-node.completed { border-color: #bdbdbd !important; background: #fff !important; }
+    .template-mode .fc-node.in-progress { border-color: #bdbdbd !important; }
+    /* Inner status dot */
+    .template-mode .fc-inner-status.completed,
+    .template-mode .fc-inner-status.in-progress { background: #bdbdbd !important; }
+    /* Swimlane step status chip */
+    .template-mode .swim-step-status { display: none; }
+    /* Sub-step dots */
+    .template-mode .substep-dot.completed,
+    .template-mode .substep-dot.in-progress { background: #bdbdbd !important; }
+    .template-mode .substep-status { display: none; }
   `,
 })
 export class ProcessOverviewComponent {

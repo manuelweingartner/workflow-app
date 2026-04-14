@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
 import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode } from '../../models/process.model';
@@ -12,7 +12,9 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
       <div class="detail">
         <!-- Header -->
         <div class="detail-header">
-          <div class="detail-status" [class]="step.status">{{ statusLabel(step.status) }}</div>
+          @if (isInstance()) {
+            <div class="detail-status" [class]="step.status">{{ statusLabel(step.status) }}</div>
+          }
           @if (step.number === 'NEU' && step.status !== 'completed') {
             <div class="edit-header">
               <div class="edit-row">
@@ -42,12 +44,12 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             <h2>{{ step.number }} &mdash; {{ step.title }}</h2>
             <p class="detail-responsible">&#128100; {{ step.responsible }}</p>
             @if (step.dueDate) { <p class="detail-date">&#128197; Fällig: {{ step.dueDate }}</p> }
-            @if (step.completedDate) { <p class="detail-date completed">&#9989; Abgeschlossen: {{ step.completedDate }}</p> }
+            @if (isInstance() && step.completedDate) { <p class="detail-date completed">&#9989; Abgeschlossen: {{ step.completedDate }}</p> }
           }
         </div>
 
         <!-- Schritttyp / Gateway-Typ -->
-        @if (step.status !== 'completed') {
+        @if (!isInstance()) {
           <section class="section">
             @if (step.kind === 'gateway') {
               <h3>Gateway-Typ</h3>
@@ -142,24 +144,64 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
         @if (step.gatewayType === 'decision') {
           <section class="section">
             <h3>
-              Verzweigungen
+              @if (isInstance()) { Entscheidung } @else { Verzweigungen }
               <span class="count">{{ step.branches?.length || 0 }}</span>
-              @if (step.status !== 'completed') {
+              @if (!isInstance()) {
                 <button class="add-btn" (click)="addBranch(step.id)">+ Pfad</button>
               }
             </h3>
-            @for (branch of step.branches || []; track branch.id) {
-              <div class="branch-edit-item">
-                <div class="branch-edit-color"></div>
-                <div class="branch-edit-fields">
-                  <input type="text" [value]="branch.label" (change)="updateBranch(step.id, branch.id, 'label', $event)" placeholder="Label (z.B. Bewilligt)" class="branch-input" />
-                  <input type="text" [value]="branch.condition" (change)="updateBranch(step.id, branch.id, 'condition', $event)" placeholder="Bedingung" class="branch-input small" />
-                  <span class="branch-step-count">{{ branch.steps.length }} Schritt(e) — im Diagramm bearbeiten</span>
+
+            @if (isInstance()) {
+              <!-- Instance mode: branch chooser -->
+              @if (step.chosenBranchId) {
+                <div class="branch-chosen-info">
+                  <i class="material-icons">check_circle</i>
+                  Entscheidung getroffen — Pfad wird im Diagramm hervorgehoben.
                 </div>
-                @if (step.status !== 'completed') {
-                  <button class="remove-btn" (click)="removeBranch(step.id, branch.id)">&#10005;</button>
+              } @else {
+                <div class="branch-choose-hint">
+                  <i class="material-icons">info_outline</i>
+                  Pfad wählen, um die Entscheidung im Workflow festzuhalten:
+                </div>
+              }
+              <div class="branch-chooser-list">
+                @for (branch of step.branches || []; track branch.id) {
+                  <div class="branch-choose-item"
+                    [class.chosen]="step.chosenBranchId === branch.id"
+                    [class.unchosen]="step.chosenBranchId && step.chosenBranchId !== branch.id"
+                    (click)="step.chosenBranchId ? null : chooseBranch(step.id, branch.id)">
+                    <div class="branch-choose-radio">
+                      @if (step.chosenBranchId === branch.id) {
+                        <i class="material-icons chosen-icon">check_circle</i>
+                      } @else {
+                        <i class="material-icons">radio_button_unchecked</i>
+                      }
+                    </div>
+                    <div class="branch-choose-info">
+                      <span class="branch-choose-label">{{ branch.label }}</span>
+                      @if (branch.condition) {
+                        <span class="branch-choose-cond">{{ branch.condition }}</span>
+                      }
+                      <span class="branch-step-count">{{ branch.steps.length }} Folgeschritt(e)</span>
+                    </div>
+                  </div>
                 }
               </div>
+            } @else {
+              <!-- Template mode: branch editing -->
+              @for (branch of step.branches || []; track branch.id) {
+                <div class="branch-edit-item">
+                  <div class="branch-edit-color"></div>
+                  <div class="branch-edit-fields">
+                    <input type="text" [value]="branch.label" (change)="updateBranch(step.id, branch.id, 'label', $event)" placeholder="Label (z.B. Bewilligt)" class="branch-input" />
+                    <input type="text" [value]="branch.condition" (change)="updateBranch(step.id, branch.id, 'condition', $event)" placeholder="Bedingung" class="branch-input small" />
+                    <span class="branch-step-count">{{ branch.steps.length }} Schritt(e) — im Diagramm bearbeiten</span>
+                  </div>
+                  @if (step.status !== 'completed') {
+                    <button class="remove-btn" (click)="removeBranch(step.id, branch.id)">&#10005;</button>
+                  }
+                </div>
+              }
             }
           </section>
         }
@@ -170,18 +212,22 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             <h3>
               Parallele Pfade
               <span class="count">{{ step.parallelPaths?.length || 0 }}</span>
-              @if (step.status !== 'completed') {
+              @if (!isInstance()) {
                 <button class="add-btn" (click)="addParallelPath(step.id)">+ Pfad</button>
               }
             </h3>
             @for (path of step.parallelPaths || []; track $index; let pi = $index) {
               <div class="parallel-edit-item">
                 <div class="ps-dot" [class]="path[0]?.status || 'pending'"></div>
-                <input type="text" [value]="step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1)"
-                       (change)="updateParallelPathLabel(step.id, pi, $event)"
-                       class="branch-input" [placeholder]="'Pfad ' + (pi + 1)" />
+                @if (!isInstance()) {
+                  <input type="text" [value]="step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1)"
+                         (change)="updateParallelPathLabel(step.id, pi, $event)"
+                         class="branch-input" [placeholder]="'Pfad ' + (pi + 1)" />
+                } @else {
+                  <span class="branch-input-readonly">{{ step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
+                }
                 <span class="branch-step-count">{{ path.length }} Schritt(e)</span>
-                @if (step.status !== 'completed') {
+                @if (!isInstance()) {
                   <button class="remove-btn" (click)="removeParallelPath(step.id, pi)">&#10005;</button>
                 }
               </div>
@@ -195,9 +241,13 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             <h3>Schleife</h3>
             <div class="edit-row">
               <label>Bedingung</label>
-              <input type="text" [ngModel]="step.loopCondition || ''"
-                     (ngModelChange)="svc.updateStepField(step.id, { loopCondition: $event })"
-                     placeholder="Bedingung für Wiederholung" />
+              @if (!isInstance()) {
+                <input type="text" [ngModel]="step.loopCondition || ''"
+                       (ngModelChange)="svc.updateStepField(step.id, { loopCondition: $event })"
+                       placeholder="Bedingung für Wiederholung" />
+              } @else {
+                <span class="branch-input-readonly">{{ step.loopCondition || '—' }}</span>
+              }
             </div>
             <div class="edit-row" style="margin-top:8px">
               <label>Schleifenkörper</label>
@@ -212,16 +262,21 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             <h3>
               Sub-Schritte
               <span class="count">{{ step.subSteps?.length || 0 }}</span>
-              @if (step.status !== 'completed') {
+              @if (!isInstance()) {
                 <button class="add-btn" (click)="addSubStep(step.id)">+ Sub-Schritt</button>
               }
             </h3>
             @for (sub of step.subSteps || []; track sub.id; let si = $index) {
               <div class="substep-edit-item">
                 <span class="substep-edit-num">{{ si + 1 }}.</span>
-                <input type="text" [value]="sub.title" (change)="updateSubStepTitle(step.id, si, $event)" class="branch-input" />
-                <input type="text" [value]="sub.responsible" (change)="updateSubStepResp(step.id, si, $event)" placeholder="Verantwortlich" class="branch-input small" />
-                @if (step.status !== 'completed') {
+                @if (!isInstance()) {
+                  <input type="text" [value]="sub.title" (change)="updateSubStepTitle(step.id, si, $event)" class="branch-input" />
+                  <input type="text" [value]="sub.responsible" (change)="updateSubStepResp(step.id, si, $event)" placeholder="Verantwortlich" class="branch-input small" />
+                } @else {
+                  <span class="branch-input-readonly">{{ sub.title }}</span>
+                  @if (sub.responsible) { <span class="branch-input-readonly small-text">{{ sub.responsible }}</span> }
+                }
+                @if (!isInstance()) {
                   <button class="remove-btn" (click)="removeSubStep(step.id, si)">&#10005;</button>
                 }
               </div>
@@ -256,12 +311,12 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           <h3>
             Aufgaben
             <span class="count">{{ doneTaskCount(step) }}/{{ step.tasks.length }}</span>
-            @if (step.status !== 'completed') {
+            @if (!isInstance()) {
               <button class="add-btn" (click)="showAddTask.set(true)">+ Aufgabe</button>
             }
           </h3>
 
-          @if (showAddTask() && step.status !== 'completed') {
+          @if (showAddTask() && !isInstance()) {
             <div class="add-form">
               <input type="text" [(ngModel)]="newTaskTitle" placeholder="Aufgabentitel" class="add-input" />
               <input type="text" [(ngModel)]="newTaskAssignee" placeholder="Zuständig" class="add-input small" />
@@ -271,22 +326,32 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           }
 
           @for (task of step.tasks; track task.id) {
-            <div class="task-item" [class.done]="task.status === 'done'">
-              <button class="task-check-btn" (click)="svc.toggleTaskStatus(step.id, task.id)" [disabled]="step.status === 'completed'">
-                @if (task.status === 'done') {
-                  <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="#3f971a"/><path d="M5 9l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
-                } @else if (task.status === 'in-progress') {
-                  <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="none" stroke="#009fe3" stroke-width="1.5"/><circle cx="9" cy="9" r="3.5" fill="#009fe3"/></svg>
-                } @else {
+            <div class="task-item" [class.done]="isInstance() && task.status === 'done'">
+              @if (isInstance()) {
+                <!-- Instance: interactive status toggle -->
+                <button class="task-check-btn" (click)="svc.toggleTaskStatus(step.id, task.id)" [disabled]="step.status === 'completed'">
+                  @if (task.status === 'done') {
+                    <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="#3f971a"/><path d="M5 9l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
+                  } @else if (task.status === 'in-progress') {
+                    <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="none" stroke="#009fe3" stroke-width="1.5"/><circle cx="9" cy="9" r="3.5" fill="#009fe3"/></svg>
+                  } @else {
+                    <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="none" stroke="#bdbdbd" stroke-width="1.5"/></svg>
+                  }
+                </button>
+              } @else {
+                <!-- Template: neutral checkbox (no state) -->
+                <span class="task-check-template">
                   <svg width="18" height="18" viewBox="0 0 18 18"><rect width="18" height="18" rx="3" fill="none" stroke="#bdbdbd" stroke-width="1.5"/></svg>
-                }
-              </button>
+                </span>
+              }
               <div class="task-info">
-                <span class="task-title" [class.task-done-text]="task.status === 'done'">{{ task.title }}</span>
+                <span class="task-title">{{ task.title }}</span>
                 <span class="task-assignee">{{ task.assignee }}</span>
               </div>
-              <span class="task-status-badge" [class]="task.status">{{ taskStatusLabel(task.status) }}</span>
-              @if (step.status !== 'completed') {
+              @if (isInstance()) {
+                <span class="task-status-badge" [class]="task.status">{{ taskStatusLabel(task.status) }}</span>
+              }
+              @if (!isInstance()) {
                 <button class="remove-btn" title="Entfernen" (click)="svc.removeTaskFromStep(step.id, task.id)">&#10005;</button>
               }
             </div>
@@ -358,12 +423,12 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           <h3>
             Abschlusskriterien
             <span class="count">{{ metCriteriaCount(step) }}/{{ step.completionCriteria.length }}</span>
-            @if (step.status !== 'completed') {
+            @if (!isInstance()) {
               <button class="add-btn" (click)="showAddCriterion.set(true)">+ Kriterium</button>
             }
           </h3>
 
-          @if (showAddCriterion() && step.status !== 'completed') {
+          @if (showAddCriterion() && !isInstance()) {
             <div class="add-form criterion-form">
               <input type="text" [(ngModel)]="newCriterionDesc" placeholder="Abschlusskriterium beschreiben" class="add-input" />
               <div class="next-step-row">
@@ -401,7 +466,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <span class="next-step-hint">&#8594; Nächster Schritt: {{ c.suggestedNextStep }}</span>
                 }
               </div>
-              @if (step.status !== 'completed') {
+              @if (!isInstance()) {
                 <button class="remove-btn" title="Entfernen" (click)="svc.removeCriterionFromStep(step.id, c.id)">&#10005;</button>
               }
             </div>
@@ -425,28 +490,30 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           </section>
         }
 
-        <!-- Schritt abschliessen -->
-        @if (step.status === 'in-progress') {
-          <div class="complete-section">
-            @if (svc.canCompleteStep(step.id)) {
-              <button class="complete-btn" (click)="svc.completeStep(step.id)">
-                &#9989; Schritt abschliessen &amp; nächsten Schritt starten
-              </button>
-            } @else {
-              <div class="complete-hint">
-                @if (step.tasks.length > 0 && !allTasksDone(step)) {
-                  <span>&#9888; {{ step.tasks.length - doneTaskCount(step) }} Aufgabe(n) noch offen</span>
-                }
-                @if (step.completionCriteria.length > 0 && !allCriteriaMet(step)) {
-                  <span>&#9888; {{ step.completionCriteria.length - metCriteriaCount(step) }} Kriterium/en noch nicht erfüllt</span>
-                }
-              </div>
-            }
-          </div>
-        } @else if (step.status === 'pending') {
-          <div class="complete-section">
-            <div class="pending-hint">Dieser Schritt ist noch nicht aktiv. Er wird gestartet, sobald der vorherige Schritt abgeschlossen ist.</div>
-          </div>
+        <!-- Schritt abschliessen (nur in Instanz-Modus) -->
+        @if (isInstance()) {
+          @if (step.status === 'in-progress') {
+            <div class="complete-section">
+              @if (svc.canCompleteStep(step.id)) {
+                <button class="complete-btn" (click)="svc.completeStep(step.id)">
+                  &#9989; Schritt abschliessen &amp; nächsten Schritt starten
+                </button>
+              } @else {
+                <div class="complete-hint">
+                  @if (step.tasks.length > 0 && !allTasksDone(step)) {
+                    <span>&#9888; {{ step.tasks.length - doneTaskCount(step) }} Aufgabe(n) noch offen</span>
+                  }
+                  @if (step.completionCriteria.length > 0 && !allCriteriaMet(step)) {
+                    <span>&#9888; {{ step.completionCriteria.length - metCriteriaCount(step) }} Kriterium/en noch nicht erfüllt</span>
+                  }
+                </div>
+              }
+            </div>
+          } @else if (step.status === 'pending') {
+            <div class="complete-section">
+              <div class="pending-hint">Dieser Schritt ist noch nicht aktiv. Er wird gestartet, sobald der vorherige Schritt abgeschlossen ist.</div>
+            </div>
+          }
         }
 
         } <!-- end @if kind !== gateway -->
@@ -523,6 +590,11 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .next-step-row select:focus { outline: none; border-color: #009fe3; }
     .form-actions { display: flex; gap: 8px; }
 
+    .branch-input-readonly {
+      font-size: 13px; color: #353c46; padding: 2px 0; flex: 1;
+    }
+    .branch-input-readonly.small-text { font-size: 12px; color: #6c7e93; flex: 0.5; }
+
     .remove-btn {
       background: none; border: none; color: #bdbdbd; cursor: pointer; font-size: 14px;
       padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
@@ -533,6 +605,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .task-item.done { opacity: 0.7; }
     .task-check-btn { background: none; border: none; cursor: pointer; padding: 0; flex-shrink: 0; }
     .task-check-btn:disabled { cursor: default; }
+    .task-check-template { display: flex; flex-shrink: 0; opacity: 0.5; }
     .task-info { flex: 1; display: flex; flex-direction: column; }
     .task-title { font-size: 14px; color: #353c46; }
     .task-done-text { text-decoration: line-through; color: #6c7e93; }
@@ -694,6 +767,32 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .activity-kind-btn:hover { border-color: #009fe3; background: #e6f4fd; }
     .activity-kind-btn.active { background: #e6f4fd; border-color: #009fe3; border-width: 2px; color: #009fe3; font-weight: 500; }
 
+    /* Branch chooser (instance mode) */
+    .branch-chosen-info {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px; margin-bottom: 8px;
+      background: #f0fdf4; border-radius: 4px; font-size: 12px; color: #3f971a;
+    }
+    .branch-chosen-info .material-icons { font-size: 16px; }
+    .branch-choose-hint {
+      display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 8px;
+      background: #f0f9ff; border-radius: 4px; font-size: 12px; color: #009fe3;
+    }
+    .branch-choose-hint .material-icons { font-size: 15px; }
+    .branch-chooser-list { display: flex; flex-direction: column; gap: 6px; }
+    .branch-choose-item {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+      border: 1px solid #dde2e7; border-radius: 6px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .branch-choose-item:not(.chosen):not(.unchosen):hover { background: #f0f9ff; border-color: #009fe3; }
+    .branch-choose-item.chosen { background: #f0fdf4; border-color: #3f971a; border-width: 2px; cursor: default; }
+    .branch-choose-item.unchosen { opacity: 0.45; cursor: default; }
+    .branch-choose-radio .material-icons { font-size: 20px; color: #bdbdbd; }
+    .branch-choose-radio .chosen-icon { color: #3f971a; }
+    .branch-choose-info { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+    .branch-choose-label { font-size: 13px; font-weight: 500; color: #353c46; }
+    .branch-choose-cond { font-size: 11px; color: #6c7e93; font-style: italic; }
+
     /* Branch editing */
     .branch-edit-item {
       display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ebebed;
@@ -736,6 +835,14 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
 })
 export class StepDetailComponent {
   svc = inject(ProcessService);
+
+  isInstance = computed(() => this.svc.activeProcess()?.kind === 'instance');
+
+  chooseBranch(gatewayStepId: string, branchId: string) {
+    const procId = this.svc.activeProcess()?.id;
+    if (!procId) return;
+    this.svc.chooseBranch(procId, gatewayStepId, branchId, 'Sachbearbeiter:in');
+  }
 
   showAddTask = signal(false);
   newTaskTitle = signal('');

@@ -2,7 +2,7 @@ import { Injectable, signal, computed } from '@angular/core';
 import {
   Process, ProcessStep, Dossier, ContextObject, ContextLink,
   Input, Task, CompletionCriterion, PortalMessage, PortalDocument, Note, Participant,
-  AppTab, TabType, Sitzung, GatewayType,
+  AppTab, TabType, Sitzung, GatewayType, WorkflowEvent,
 } from '../models/process.model';
 
 export interface LinkedDocument {
@@ -37,11 +37,12 @@ export class ProcessService {
   // --- Tab system ---
   private _tabs = signal<AppTab[]>([]);
   private _activeTabId = signal<string>('');
+  private _showDashboard = signal(false);
   private selectedStepId = signal<string | null>(null);
   private _activeMenu = signal('process');
 
   readonly tabs = this._tabs.asReadonly();
-  readonly activeTabId = this._activeTabId.asReadonly();
+  readonly activeTabId = computed(() => this._showDashboard() ? '' : this._activeTabId());
   readonly activeTab = computed(() => this._tabs().find((t) => t.id === this._activeTabId()) ?? this._tabs()[0]);
   readonly activeTabType = computed<TabType>(() => this.activeTab().type);
 
@@ -164,9 +165,27 @@ export class ProcessService {
   readonly notes = computed<Note[]>(() => this.dossier$().notes);
   readonly participants = computed<Participant[]>(() => this.dossier$().participants);
 
+  // --- Template vs. Instance views ---
+  readonly allTemplates = computed(() =>
+    this._processes().filter((p) => p.kind !== 'instance')
+  );
+  readonly allInstances = computed(() =>
+    this._processes().filter((p) => p.kind === 'instance')
+  );
+  // True when the active prozess-tab shows a Vorlage (not a running instance)
+  readonly isTemplateMode = computed(() =>
+    this.activeProcess()?.kind !== 'instance'
+  );
+
+  // --- Events of the active process (for instance audit log) ---
+  readonly activeProcessEvents = computed<WorkflowEvent[]>(() =>
+    this.activeProcess()?.events ?? []
+  );
+
   // --- Tab management ---
 
   openTab(type: TabType, referenceId: string) {
+    this._showDashboard.set(false);
     const existing = this._tabs().find((t) => t.type === type && t.referenceId === referenceId);
     if (existing) {
       this._activeTabId.set(existing.id);
@@ -197,9 +216,14 @@ export class ProcessService {
     }
   }
 
-  readonly isDashboard = computed(() => this._tabs().length === 0);
+  readonly isDashboard = computed(() => this._tabs().length === 0 || this._showDashboard());
+
+  goToDashboard() {
+    this._showDashboard.set(true);
+  }
 
   switchTab(tabId: string) {
+    this._showDashboard.set(false);
     this._activeTabId.set(tabId);
     const tab = this._tabs().find((t) => t.id === tabId);
     if (tab) {
@@ -522,6 +546,8 @@ export class ProcessService {
   canCompleteStep(stepId: string): boolean {
     const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
     if (!step || step.status !== 'in-progress') return false;
+    // Activities are automated — tasks/criteria sections are hidden in UI, so skip the check
+    if (step.stepType === 'activity') return true;
     const allCriteriaMet = step.completionCriteria.length === 0 || step.completionCriteria.every((c) => c.met);
     const allTasksDone = step.tasks.length === 0 || step.tasks.every((t) => t.status === 'done');
     return allCriteriaMet && allTasksDone;
@@ -541,6 +567,19 @@ export class ProcessService {
       p.steps[idx + 1].status = 'in-progress';
     }
     p.steps = this.updateStepInTree(p.steps, step);
+    // Write audit event if this is an instance
+    if (p.kind === 'instance') {
+      if (!p.events) p.events = [];
+      p.events.unshift({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        type: 'step_completed',
+        description: `Schritt «${step.title}» abgeschlossen`,
+        actor: 'Sachbearbeiter:in',
+        stepId: step.id,
+        stepTitle: step.title,
+      });
+    }
     this.updateProcess(p);
     if (idx !== -1 && idx + 1 < p.steps.length) {
       this.selectedStepId.set(p.steps[idx + 1].id);
@@ -557,7 +596,8 @@ export class ProcessService {
 
   updateStepField(stepId: string, field: Partial<ProcessStep>) {
     const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
-    if (!step || step.status === 'completed') return;
+    if (!step) return;
+    if (this.activeProcess()?.kind === 'instance' && step.status === 'completed') return;
     const updated = { ...structuredClone(step), ...field };
     this.updateStep(updated);
   }
@@ -628,6 +668,108 @@ export class ProcessService {
     p.steps = this.updateStepInTree(p.steps, gw);
     this.updateProcess(p);
     this.selectedStepId.set(newStep.id);
+  }
+
+  // --- Workflow Template / Instance methods ---
+
+  /** Creates a new instance from a template. Returns the new instance id. */
+  startWorkflow(templateId: string, params: { startedBy: string; title?: string }): string {
+    const template = this._processes().find((p) => p.id === templateId);
+    if (!template) return '';
+    const instance: Process = structuredClone(template);
+    instance.id = `inst-${templateId}-${crypto.randomUUID().slice(0, 8)}`;
+    instance.title = params.title || template.title;
+    instance.kind = 'instance';
+    instance.templateId = templateId;
+    instance.startedAt = new Date().toLocaleDateString('de-CH');
+    instance.startedBy = params.startedBy;
+    instance.instanceState = 'running';
+    instance.events = [{
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      type: 'started',
+      description: `Workflow «${instance.title}» gestartet von ${params.startedBy}`,
+      actor: params.startedBy,
+    }];
+    // Reset all steps to a clean initial state — templates may have completed steps as demo data
+    instance.steps = this.resetStepsForInstance(instance.steps);
+    // Activate the first work step (kind='step'), not gateways
+    const firstWorkStep = instance.steps.find((s) => s.kind !== 'gateway');
+    if (firstWorkStep) firstWorkStep.status = 'in-progress';
+    this._processes.update((ps) => [...ps, instance]);
+    return instance.id;
+  }
+
+  /** Recursively resets all steps/tasks/criteria to their initial state for a fresh instance. */
+  private resetStepsForInstance(steps: ProcessStep[]): ProcessStep[] {
+    return steps.map((s) => ({
+      ...s,
+      status: 'pending' as const,
+      completedDate: undefined,
+      chosenBranchId: undefined,
+      tasks: s.tasks?.map((t) => ({ ...t, status: 'open' as const, resultValue: undefined })) ?? [],
+      completionCriteria: s.completionCriteria?.map((c) => ({ ...c, met: false })) ?? [],
+      branches: s.branches?.map((b) => ({ ...b, steps: this.resetStepsForInstance(b.steps) })),
+      parallelPaths: s.parallelPaths?.map((p) => this.resetStepsForInstance(p)),
+      loopBody: s.loopBody ? this.resetStepsForInstance(s.loopBody) : undefined,
+      subSteps: s.subSteps ? this.resetStepsForInstance(s.subSteps) : undefined,
+    }));
+  }
+
+  /** Sets the chosen branch on a decision gateway and records an audit event. */
+  chooseBranch(processId: string, gatewayStepId: string, branchId: string, actor: string) {
+    const ps = structuredClone(this._processes());
+    const proc = ps.find((p) => p.id === processId);
+    if (!proc) return;
+    const gw = this.findStepInTree(proc.steps, gatewayStepId);
+    if (!gw || gw.gatewayType !== 'decision') return;
+    const branch = gw.branches?.find((b) => b.id === branchId);
+    if (!branch) return;
+    gw.chosenBranchId = branchId;
+    proc.steps = this.updateStepInTree(proc.steps, gw);
+    if (proc.kind === 'instance') {
+      if (!proc.events) proc.events = [];
+      proc.events.unshift({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        type: 'branch_chosen',
+        description: `Entscheidungspfad «${branch.label}» gewählt`,
+        actor,
+        stepId: gw.id,
+        stepTitle: gw.title,
+      });
+    }
+    this._processes.set(ps);
+  }
+
+  /** Sets a result value on a task and records an audit event. */
+  setTaskResult(stepId: string, taskId: string, value: string) {
+    const step = this.findStepInTree(this.activeProcess()?.steps ?? [], stepId);
+    if (!step) return;
+    const updated = structuredClone(step);
+    const task = updated.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    task.resultValue = value;
+    this.updateStep(updated);
+    // Write event if instance
+    const proc = this.activeProcess();
+    if (proc?.kind === 'instance') {
+      const ps = structuredClone(this._processes());
+      const p = ps.find((x) => x.id === proc.id);
+      if (p) {
+        if (!p.events) p.events = [];
+        p.events.unshift({
+          id: crypto.randomUUID(),
+          timestamp: new Date().toISOString(),
+          type: 'task_added',
+          description: `Aufgabe «${task.title}» — Ergebnis: ${value}`,
+          actor: 'Sachbearbeiter:in',
+          stepId: step.id,
+          stepTitle: step.title,
+        });
+        this._processes.set(ps);
+      }
+    }
   }
 
   // --- Serviceanfrage / Portal methods ---
@@ -1666,6 +1808,151 @@ const PROCESS_KESB: Process = {
   ],
 };
 
+// ============================================================
+// WORKFLOW INSTANCES — demo instances for stakeholder presentation
+// ============================================================
+
+const INSTANCE_BAUGESUCH_1: Process = {
+  id: 'inst-proc-bau-demo1',
+  title: 'Baugesuch Sonnenweg 12 — Neubau EFH',
+  kind: 'instance',
+  templateId: 'proc-bau',
+  startedAt: '15.03.2026',
+  startedBy: 'Weber Petra',
+  instanceState: 'running',
+  processOwner: { name: 'Oberholzer Martin', role: 'Bauverwalter', email: 'm.oberholzer@gemeinde.ch' },
+  events: [
+    { id: 'e4', timestamp: '2026-04-05T10:00:00Z', type: 'step_completed', description: 'Schritt «Öffentliche Auflage» abgeschlossen', actor: 'Oberholzer Martin', stepId: 'ib1-3', stepTitle: 'Öffentliche Auflage' },
+    { id: 'e3', timestamp: '2026-03-20T14:30:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-2', stepTitle: 'Vollständigkeitsprüfung' },
+    { id: 'e2', timestamp: '2026-03-15T09:15:00Z', type: 'step_completed', description: 'Schritt «Baugesuch beantragt» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-1', stepTitle: 'Baugesuch beantragt' },
+    { id: 'e1', timestamp: '2026-03-15T09:00:00Z', type: 'started', description: 'Workflow «Baugesuch Sonnenweg 12» gestartet von Weber Petra', actor: 'Weber Petra' },
+  ],
+  steps: [
+    {
+      id: 'ib1-1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '15.03.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Weber Petra, Gesuchstellerin', category: 'Baugesuch',
+      contextLinks: [], tasks: [
+        { id: 'ib1-t1', title: 'Gesuchsformular ausfüllen', assignee: 'Weber Petra', status: 'done' },
+        { id: 'ib1-t2', title: 'Pläne einreichen', assignee: 'Weber Petra', status: 'done' },
+      ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'ib1-2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '20.03.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Oberholzer Martin, Bauverwalter', category: 'Baugesuch',
+      contextLinks: [], tasks: [
+        { id: 'ib1-t3', title: 'Unterlagen prüfen', assignee: 'Oberholzer Martin', status: 'done' },
+      ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'ib1-3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '05.04.2026',
+      kind: 'step', stepType: 'subprocess',
+      responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      subSteps: [
+        { id: 'ib1-3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '20.03.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'ib1-3b', number: '6855.2', title: 'Auflage (30 Tage)', status: 'completed', completedDate: '05.04.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+      ],
+    },
+    {
+      id: 'ib1-gw-parallel', number: '', title: 'Fachstellenberichte', status: 'in-progress',
+      kind: 'gateway', gatewayType: 'parallel',
+      responsible: '', category: 'Fachberichte',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      parallelPathLabels: ['Tiefbauamt', 'Umweltamt', 'Denkmalpflege'],
+      parallelPaths: [
+        [{ id: 'ib1-p1-1', number: '6901', title: 'Bericht Tiefbauamt', status: 'in-progress', responsible: 'Keller Beat', category: 'Fachberichte', contextLinks: [], tasks: [{ id: 'ib1-p1-t1', title: 'Situationsplan prüfen', assignee: 'Keller Beat', status: 'in-progress' }], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'ib1-p2-1', number: '6902', title: 'Bericht Umweltamt', status: 'pending', responsible: 'Müller Claudia', category: 'Fachberichte', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'ib1-p3-1', number: '6903', title: 'Bericht Denkmalpflege', status: 'pending', responsible: 'Huber Ernst', category: 'Fachberichte', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ],
+    },
+    {
+      id: 'ib1-gw-decision', number: '', title: 'Entscheid', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Entscheid',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      branches: [
+        { id: 'ib1-br-bewilligt', label: 'Bewilligt', condition: 'Alle Fachberichte positiv', steps: [
+          { id: 'ib1-br1-1', number: '7001', title: 'Baubewilligung ausstellen', status: 'pending', responsible: 'Oberholzer Martin', category: 'Entscheid', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }
+        ]},
+        { id: 'ib1-br-auflagen', label: 'Bewilligt mit Auflagen', condition: 'Korrekturen erforderlich', steps: [] },
+        { id: 'ib1-br-abgelehnt', label: 'Abgelehnt', condition: 'Wesentliche Mängel', steps: [] },
+      ],
+    },
+  ],
+};
+
+const INSTANCE_EINBUERGERUNG_1: Process = {
+  id: 'inst-proc-eb-demo1',
+  title: 'Einbürgerung Nguyen Van An',
+  kind: 'instance',
+  templateId: 'proc-eb',
+  startedAt: '01.02.2026',
+  startedBy: 'Schmid Klaus',
+  instanceState: 'running',
+  processOwner: { name: 'Frei Barbara', role: 'Gemeindeschreiberin', email: 'b.frei@gemeinde.ch' },
+  events: [
+    { id: 'ee6', timestamp: '2026-04-01T10:00:00Z', type: 'step_completed', description: 'Schritt «Vorbereitung Gemeinderatssitzung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-6', stepTitle: 'Vorbereitung GR-Sitzung' },
+    { id: 'ee5', timestamp: '2026-03-15T11:00:00Z', type: 'branch_chosen', description: 'Entscheidungspfad «Empfohlen» gewählt', actor: 'Schmid Klaus', stepId: 'ie1-gw-dec', stepTitle: 'Empfehlung Einbürgerungskommission' },
+    { id: 'ee4', timestamp: '2026-03-10T16:00:00Z', type: 'step_completed', description: 'Schritt «Prüfung Sprache & Integration» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-gw-par', stepTitle: 'Prüfung Sprache & Integration' },
+    { id: 'ee3', timestamp: '2026-02-20T09:00:00Z', type: 'step_completed', description: 'Schritt «Vorprüfung Aufenthalt & Kriterien» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-3', stepTitle: 'Vorprüfung Aufenthalt & Kriterien' },
+    { id: 'ee2', timestamp: '2026-02-10T14:00:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-2', stepTitle: 'Vollständigkeitsprüfung' },
+    { id: 'ee1', timestamp: '2026-02-01T08:30:00Z', type: 'started', description: 'Workflow «Einbürgerung Nguyen Van An» gestartet von Schmid Klaus', actor: 'Schmid Klaus' },
+  ],
+  steps: [
+    {
+      id: 'ie1-1', number: '1', title: 'Gesuch eingereicht', status: 'completed', completedDate: '01.02.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Nguyen Van An, Gesuchsteller', category: 'Einbürgerung',
+      contextLinks: [], tasks: [
+        { id: 'ie1-t1', title: 'Gesuchsformular einreichen', assignee: 'Nguyen Van An', status: 'done' },
+        { id: 'ie1-t2', title: 'Dokumente beilegen', assignee: 'Nguyen Van An', status: 'done' },
+      ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'ie1-2', number: '2', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '10.02.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Schmid Klaus, Sachbearbeiter', category: 'Einbürgerung',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'ie1-3', number: '3', title: 'Vorprüfung Aufenthalt & Kriterien', status: 'completed', completedDate: '20.02.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Schmid Klaus, Sachbearbeiter', category: 'Einbürgerung',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'ie1-gw-par', number: '', title: 'Prüfung Sprache & Integration', status: 'completed', completedDate: '10.03.2026',
+      kind: 'gateway', gatewayType: 'parallel',
+      responsible: '', category: 'Einbürgerung',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      parallelPathLabels: ['Sprachnachweis', 'Integrationsnachweis'],
+      parallelPaths: [
+        [{ id: 'ie1-p1-1', number: '4a', title: 'Sprachkenntnisse prüfen (B1)', status: 'completed', completedDate: '05.03.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'ie1-p2-1', number: '4b', title: 'Integrationsgrad prüfen', status: 'completed', completedDate: '08.03.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ],
+    },
+    {
+      id: 'ie1-gw-dec', number: '', title: 'Empfehlung Einbürgerungskommission', status: 'completed', completedDate: '15.03.2026',
+      kind: 'gateway', gatewayType: 'decision',
+      chosenBranchId: 'ie1-br-empfohlen',
+      responsible: '', category: 'Einbürgerung',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+      branches: [
+        { id: 'ie1-br-empfohlen', label: 'Empfohlen', condition: 'Alle Kriterien erfüllt', steps: [
+          { id: 'ie1-br1-1', number: '6', title: 'Vorbereitung GR-Sitzung', status: 'in-progress', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [
+            { id: 'ie1-br1-t1', title: 'Traktandum vorbereiten', assignee: 'Schmid Klaus', status: 'in-progress' },
+            { id: 'ie1-br1-t2', title: 'Unterlagen versenden', assignee: 'Schmid Klaus', status: 'open' },
+          ], inputs: [], actions: [], completionCriteria: [], conditionals: [] }
+        ]},
+        { id: 'ie1-br-nicht', label: 'Nicht empfohlen', condition: 'Kriterien nicht erfüllt', steps: [] },
+        { id: 'ie1-br-zurueck', label: 'Zurückgestellt', condition: 'Weitere Prüfung nötig', steps: [] },
+      ],
+    },
+  ],
+};
+
 const ALL_PROCESSES: Process[] = [
   PROCESS_BAUGESUCH,
   PROCESS_AKTENEINSICHT,
@@ -1673,6 +1960,8 @@ const ALL_PROCESSES: Process[] = [
   PROCESS_GEMEINDERAT,
   PROCESS_VERANSTALTUNG,
   PROCESS_KESB,
+  INSTANCE_BAUGESUCH_1,
+  INSTANCE_EINBUERGERUNG_1,
 ];
 
 // ============================================================
