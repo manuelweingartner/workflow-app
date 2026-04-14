@@ -30,7 +30,16 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
           </div>
         </div>
         @if (svc.activeProcess(); as proc) {
-          <p class="overview-sub">{{ proc.title }} &mdash; &#128100; {{ proc.processOwner.name }}</p>
+          <p class="overview-sub">
+            @if (svc.activeTabType() === 'geschaeft') {
+              <span class="proc-link" (click)="svc.openTab('prozess', proc.id)" title="Prozess-Tab öffnen">
+                {{ proc.title }} <i class="material-icons" style="font-size:13px;vertical-align:middle">open_in_new</i>
+              </span>
+            } @else {
+              {{ proc.title }}
+            }
+            &mdash; &#128100; {{ proc.processOwner.name }}
+          </p>
         }
       </div>
 
@@ -816,6 +825,8 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
     .overview-title-row { display: flex; align-items: center; justify-content: space-between; }
     .overview-title-row h2 { margin: 0 0 4px; font-size: 1.375rem; font-weight: 400; color: #353c46; }
     .overview-sub { margin: 0 0 20px; font-size: 0.75rem; color: #6c7e93; }
+    .proc-link { cursor: pointer; color: #009fe3; }
+    .proc-link:hover { text-decoration: underline; }
 
     /* Fullscreen */
     .overview.fullscreen {

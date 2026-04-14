@@ -1953,6 +1953,38 @@ const INSTANCE_EINBUERGERUNG_1: Process = {
   ],
 };
 
+// Dossier-linked instances — spread from templates, add instance fields, preserve step statuses
+const INSTANCE_DOSSIER_BAU: Process = {
+  ...PROCESS_BAUGESUCH,
+  id: 'inst-dossier-bau', kind: 'instance', templateId: 'proc-bau',
+  startedAt: '14.01.2025', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_AE: Process = {
+  ...PROCESS_AKTENEINSICHT,
+  id: 'inst-dossier-ae', kind: 'instance', templateId: 'proc-ae',
+  startedAt: '03.02.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_EB: Process = {
+  ...PROCESS_EINBUERGERUNG,
+  id: 'inst-dossier-eb', kind: 'instance', templateId: 'proc-eb',
+  startedAt: '15.11.2024', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_GR: Process = {
+  ...PROCESS_GEMEINDERAT,
+  id: 'inst-dossier-gr', kind: 'instance', templateId: 'proc-gr',
+  startedAt: '20.01.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_VA: Process = {
+  ...PROCESS_VERANSTALTUNG,
+  id: 'inst-dossier-va', kind: 'instance', templateId: 'proc-va',
+  startedAt: '01.03.2025', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_KESB: Process = {
+  ...PROCESS_KESB,
+  id: 'inst-dossier-kesb', kind: 'instance', templateId: 'proc-kesb',
+  startedAt: '05.02.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+};
+
 const ALL_PROCESSES: Process[] = [
   PROCESS_BAUGESUCH,
   PROCESS_AKTENEINSICHT,
@@ -1962,6 +1994,12 @@ const ALL_PROCESSES: Process[] = [
   PROCESS_KESB,
   INSTANCE_BAUGESUCH_1,
   INSTANCE_EINBUERGERUNG_1,
+  INSTANCE_DOSSIER_BAU,
+  INSTANCE_DOSSIER_AE,
+  INSTANCE_DOSSIER_EB,
+  INSTANCE_DOSSIER_GR,
+  INSTANCE_DOSSIER_VA,
+  INSTANCE_DOSSIER_KESB,
 ];
 
 // ============================================================
@@ -1970,7 +2008,7 @@ const ALL_PROCESSES: Process[] = [
 
 const DOSSIER_BAUGESUCH: Dossier = {
   id: '1', number: '2024-0009', title: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)',
-  processId: 'proc-bau',
+  processId: 'inst-dossier-bau',
   serviceRequest: {
     id: 'sr-1', portalFormTitle: 'Baugesuch einreichen', submittedDate: '20.02.2024', submittedBy: 'Müller Sarah', email: 's.mueller@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihr Baugesuch wird aktuell geprüft',
@@ -2012,7 +2050,7 @@ const DOSSIER_BAUGESUCH: Dossier = {
 
 const DOSSIER_AKTENEINSICHT: Dossier = {
   id: '2', number: '2025-0042', title: 'Akteneinsicht Verkehrsplanung Dorfzentrum',
-  processId: 'proc-ae',
+  processId: 'inst-dossier-ae',
   serviceRequest: {
     id: 'sr-2', portalFormTitle: 'Akteneinsicht beantragen', submittedDate: '10.03.2025', submittedBy: 'Keller Thomas', email: 't.keller@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihr Antrag wird geprüft — Identitätsnachweis ausstehend',
@@ -2045,7 +2083,7 @@ const DOSSIER_AKTENEINSICHT: Dossier = {
 
 const DOSSIER_EINBUERGERUNG: Dossier = {
   id: '3', number: '2025-0018', title: 'Einbürgerungsgesuch Rossi Marco',
-  processId: 'proc-eb',
+  processId: 'inst-dossier-eb',
   serviceRequest: {
     id: 'sr-3', portalFormTitle: 'Einbürgerungsgesuch stellen', submittedDate: '15.01.2025', submittedBy: 'Rossi Marco', email: 'm.rossi@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Sprachprüfung ausstehend',
@@ -2086,7 +2124,7 @@ const DOSSIER_EINBUERGERUNG: Dossier = {
 
 const DOSSIER_GEMEINDERAT: Dossier = {
   id: '4', number: '2025-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse',
-  processId: 'proc-gr',
+  processId: 'inst-dossier-gr',
   serviceRequest: {
     id: 'sr-4', portalFormTitle: 'Anfrage an den Gemeinderat', submittedDate: '01.03.2025', submittedBy: 'Brunner Lisa', email: 'l.brunner@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihre Anfrage wird dem zuständigen Ressort zugewiesen',
@@ -2120,7 +2158,7 @@ const DOSSIER_GEMEINDERAT: Dossier = {
 
 const DOSSIER_VERANSTALTUNG: Dossier = {
   id: '5', number: '2025-0071', title: 'Dorffest Sommer 2025',
-  processId: 'proc-va',
+  processId: 'inst-dossier-va',
   serviceRequest: {
     id: 'sr-5', portalFormTitle: 'Veranstaltungsbewilligung beantragen', submittedDate: '20.02.2025', submittedBy: 'Steiner Anna', email: 'a.steiner@turnverein.ch',
     status: 'in-bearbeitung', portalStatus: 'Fachstellen werden konsultiert',
@@ -2163,7 +2201,7 @@ const DOSSIER_VERANSTALTUNG: Dossier = {
 
 const DOSSIER_KESB: Dossier = {
   id: '6', number: '2025-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider',
-  processId: 'proc-kesb',
+  processId: 'inst-dossier-kesb',
   serviceRequest: {
     id: 'sr-6', portalFormTitle: 'KESB-Gefahrenmeldung einreichen', submittedDate: '05.03.2025', submittedBy: 'Widmer Ruth (Schule Dorfname)', email: 'r.widmer@schule-dorf.ch',
     status: 'in-bearbeitung', portalStatus: 'Abklärung eingeleitet',
