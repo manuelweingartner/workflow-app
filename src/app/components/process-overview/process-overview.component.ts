@@ -14,6 +14,9 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
           <h2>Prozessübersicht</h2>
           <div class="header-controls">
             <div class="view-toggle">
+              <button class="toggle-btn" [class.active]="viewMode() === 'simple'" (click)="viewMode.set('simple')" title="Einfache Ansicht">
+                <i class="material-icons">format_list_bulleted</i>
+              </button>
               <button class="toggle-btn" [class.active]="viewMode() === 'sequence'" (click)="viewMode.set('sequence')" title="Sequenz">
                 <i class="material-icons">view_list</i>
               </button>
@@ -304,7 +307,73 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
       }
     </ng-template>
 
-      @if (viewMode() === 'sequence') {
+      @if (viewMode() === 'simple') {
+        <!-- SIMPLE VIEW: flat step list, no control flow -->
+        <div class="steps-list">
+          @for (step of svc.allStepsFlat(); track step.id; let last = $last) {
+            <div class="step-row"
+                 [class.selected]="step.id === svc.selectedStep()?.id"
+                 [class.not-in-context]="!svc.isStepLinkedToContext(step.id)"
+                 [class.activity-step]="step.stepType === 'activity'"
+                 (click)="svc.selectStep(step.id)">
+              <div class="step-status-col">
+                <div class="status-icon" [class]="step.status">
+                  @if (step.stepType === 'activity') {
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                      @if (!svc.isTemplateMode() && step.status === 'completed') {
+                        <circle cx="10" cy="10" r="9" fill="#3f971a"/>
+                        <path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/>
+                      } @else if (!svc.isTemplateMode() && step.status === 'in-progress') {
+                        <circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2" stroke-dasharray="4 2"/>
+                        <circle cx="10" cy="10" r="4" fill="#009fe3"/>
+                      } @else {
+                        <circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2" stroke-dasharray="4 2"/>
+                      }
+                    </svg>
+                  } @else if (!svc.isTemplateMode() && step.status === 'completed') {
+                    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#3f971a"/><path d="M6 10l3 3 5-5" stroke="white" stroke-width="2" fill="none"/></svg>
+                  } @else if (!svc.isTemplateMode() && step.status === 'in-progress') {
+                    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#009fe3" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="#009fe3"/></svg>
+                  } @else {
+                    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
+                  }
+                </div>
+                @if (!last) { <div class="connector-line" [class]="step.status"></div> }
+              </div>
+              <div class="step-content">
+                <div class="step-title-row">
+                  @if (step.number) { <span class="step-number">{{ step.number }}</span> }
+                  <span class="step-title">{{ step.title }}</span>
+                  @if (step.stepType === 'activity') {
+                    <span class="step-type-chip activity">
+                      <i class="material-icons" style="font-size:11px">bolt</i>
+                      @if (step.activityKind === 'ai') { KI }
+                      @else if (step.activityKind === 'object-creation') { Objekt }
+                      @else if (step.activityKind === 'interface') { Schnittstelle }
+                      @else if (step.activityKind === 'notification') { Benachrichtigung }
+                      @else if (step.activityKind === 'document') { Dokument }
+                      @else { Automatisch }
+                    </span>
+                  }
+                </div>
+                <div class="step-meta">
+                  @if (step.completedDate) {
+                    <span class="meta-item">&#128197; {{ step.completedDate }}</span>
+                  } @else if (step.dueDate) {
+                    <span class="meta-item due">&#128197; Fällig {{ step.dueDate }}</span>
+                  }
+                  @if (step.responsible) {
+                    <span class="meta-item">&#128100; {{ step.responsible }}</span>
+                  }
+                </div>
+              </div>
+              <div class="step-status-label" [class]="step.status">
+                {{ statusLabel(step.status) }}
+              </div>
+            </div>
+          }
+        </div>
+      } @else if (viewMode() === 'sequence') {
         <!-- SEQUENCE VIEW -->
         <div class="steps-list">
           <!-- Start node -->
@@ -1369,7 +1438,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
 })
 export class ProcessOverviewComponent {
   svc = inject(ProcessService);
-  viewMode = signal<'sequence' | 'flowchart'>('sequence');
+  viewMode = signal<'simple' | 'sequence' | 'flowchart'>('simple');
   fullscreen = signal(false);
 
   @HostListener('document:keydown.escape')
