@@ -128,6 +128,11 @@ export class ProcessService {
     return this.findStepInTree(this.activeProcess()?.steps ?? [], id) ?? null;
   });
 
+  // Dossier linked to the currently active process (by processId === activeProcess.id)
+  readonly linkedDossier = computed(() =>
+    this._dossiers().find((d) => d.processId === this.activeProcess()?.id) ?? null
+  );
+
   readonly progress = computed(() => {
     const s = this.allStepsFlat();
     const done = s.filter((x) => x.status === 'completed').length;

@@ -1,4 +1,4 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { HeaderComponent } from './components/header/header.component';
 import { SidebarComponent, MenuItem } from './components/sidebar/sidebar.component';
 import { ProcessOverviewComponent } from './components/process-overview/process-overview.component';
@@ -43,7 +43,10 @@ import { ProcessService } from './services/process.service';
           <app-sidebar [items]="geschaeftMenuItems()" [activeId]="svc.activeMenu()" (itemClick)="svc.setActiveMenu($event)" />
           @switch (svc.activeMenu()) {
             @case ('process') {
-              <app-process-overview />
+              <app-process-overview [style.width.px]="overviewWidth()" />
+              <div class="resize-handle" (mousedown)="onResizeStart($event)" title="Breite anpassen">
+                <div class="resize-grip"></div>
+              </div>
               <div class="detail-panel">
                 <app-step-detail />
               </div>
@@ -94,8 +97,21 @@ import { ProcessService } from './services/process.service';
       overflow: hidden;
       background: #f4f5f6;
     }
-    .detail-panel { flex: 1; overflow-y: auto; }
+    .detail-panel { flex: 1; overflow-y: auto; min-width: 0; }
     .content-panel { flex: 1; overflow-y: auto; }
+    .resize-handle {
+      width: 6px; flex-shrink: 0; cursor: col-resize;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; transition: background 0.15s;
+      border-left: 1px solid rgba(0,0,0,0.08);
+    }
+    .resize-handle:hover { background: rgba(0,159,227,0.08); }
+    .resize-handle:active { background: rgba(0,159,227,0.15); }
+    .resize-grip {
+      width: 3px; height: 48px; border-radius: 2px;
+      background: #d4d8de; transition: background 0.15s;
+    }
+    .resize-handle:hover .resize-grip { background: #009fe3; }
     .placeholder-content {
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; color: #6c7e93;
@@ -105,6 +121,27 @@ import { ProcessService } from './services/process.service';
 })
 export class App {
   svc = inject(ProcessService);
+  overviewWidth = signal(560);
+
+  onResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = this.overviewWidth();
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(300, Math.min(900, startW + ev.clientX - startX));
+      this.overviewWidth.set(next);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
 
   geschaeftMenuItems = computed<MenuItem[]>(() => {
     const docs = this.svc.allDocuments().length;

@@ -41,6 +41,12 @@ import { ProcessService } from '../../services/process.service';
       </div>
       <div class="banner-right">
         @if (isInstance()) {
+          @if (svc.linkedDossier(); as dossier) {
+            <button class="btn-dossier-link" (click)="svc.openTab('geschaeft', dossier.id)" title="Verknüpftes Geschäft öffnen">
+              <i class="material-icons">folder</i>
+              Geschäft {{ dossier.number }}
+            </button>
+          }
           <button class="btn-template-link" (click)="goToTemplate()">
             <i class="material-icons">account_tree</i>
             Zur Vorlage
@@ -140,6 +146,15 @@ import { ProcessService } from '../../services/process.service';
     }
     .btn-start:hover { background: #0080c0; }
     .btn-start .material-icons { font-size: 16px; }
+
+    .btn-dossier-link {
+      display: flex; align-items: center; gap: 4px;
+      padding: 5px 14px; background: #e6f4fd; border: 1px solid #009fe3;
+      border-radius: 4px; font-size: 12px; font-family: inherit; color: #009fe3;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-dossier-link:hover { background: #cce9f9; }
+    .btn-dossier-link .material-icons { font-size: 15px; }
 
     .btn-template-link {
       display: flex; align-items: center; gap: 4px;
