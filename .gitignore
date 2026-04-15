@@ -2,3 +2,8 @@ node_modules/
 dist/
 .angular/
 *.output
+
+# Claude Code local state
+.claude/autopull.log
+.claude/worktrees/
+.claude/settings.local.json
