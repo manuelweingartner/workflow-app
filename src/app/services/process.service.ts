@@ -705,6 +705,12 @@ export class ProcessService {
     return instance.id;
   }
 
+  /** Adds a newly imported or AI-generated process and opens it in a new tab. */
+  addProcess(process: Process): void {
+    this._processes.update((ps) => [...ps, process]);
+    this.openTab('prozess', process.id);
+  }
+
   /** Recursively resets all steps/tasks/criteria to their initial state for a fresh instance. */
   private resetStepsForInstance(steps: ProcessStep[]): ProcessStep[] {
     return steps.map((s) => ({

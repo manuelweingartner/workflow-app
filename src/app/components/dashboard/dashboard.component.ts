@@ -1,4 +1,4 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, Output, EventEmitter } from '@angular/core';
 import { ProcessService } from '../../services/process.service';
 import { Process } from '../../models/process.model';
 
@@ -22,6 +22,13 @@ import { Process } from '../../models/process.model';
     <div class="dashboard">
       <div class="dashboard-header">
         <h1>Mein Dashboard</h1>
+        <div class="header-actions">
+          <button class="btn-import-ki" (click)="openImport.emit()">
+            <span class="ki-badge">KI+</span>
+            <i class="material-icons">cloud_upload</i>
+            Prozess importieren
+          </button>
+        </div>
       </div>
 
       <!-- Greeting + stats row -->
@@ -186,6 +193,21 @@ import { Process } from '../../models/process.model';
     .dashboard { flex: 1; overflow-y: auto; padding: 24px 30px 40px; }
     .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
     .dashboard-header h1 { font-size: 1.25rem; font-weight: 400; color: #353c46; margin: 0; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .btn-import-ki {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 16px; border: none; border-radius: 20px;
+      background: linear-gradient(135deg, #7c3aed, #009fe3);
+      color: white; font-size: 13px; font-family: inherit;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(124,58,237,0.3);
+      transition: box-shadow 0.2s, transform 0.15s;
+    }
+    .btn-import-ki:hover { box-shadow: 0 4px 14px rgba(124,58,237,0.45); transform: translateY(-1px); }
+    .btn-import-ki .material-icons { font-size: 17px; }
+    .ki-badge {
+      font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.25);
+      border-radius: 4px; padding: 1px 5px; letter-spacing: 0.05em;
+    }
 
     .cards-row { display: flex; gap: 16px; margin-bottom: 28px; }
     .card {
@@ -283,6 +305,7 @@ import { Process } from '../../models/process.model';
   `,
 })
 export class DashboardComponent {
+  @Output() openImport = new EventEmitter<void>();
   svc = inject(ProcessService);
 
   templateName(templateId: string | undefined): string {

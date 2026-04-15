@@ -14,6 +14,7 @@ import { ProcessViewComponent } from './components/process-view/process-view.com
 import { SitzungViewComponent } from './components/sitzung-view/sitzung-view.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { AiAssistantComponent } from './components/ai-assistant/ai-assistant.component';
+import { KiImportDialogComponent } from './components/ki-import-dialog/ki-import-dialog.component';
 import { ProcessService } from './services/process.service';
 
 @Component({
@@ -24,12 +25,19 @@ import { ProcessService } from './services/process.service';
     DocumentsViewComponent, TasksViewComponent, DossierDetailsComponent, DossierOverviewComponent,
     ServiceRequestComponent, NotesViewComponent, ParticipantsViewComponent,
     ProcessViewComponent, SitzungViewComponent, DashboardComponent, AiAssistantComponent,
+    KiImportDialogComponent,
   ],
   template: `
     <app-header />
     <app-ai-assistant />
+    @if (showKiImport()) {
+      <app-ki-import-dialog
+        (closed)="showKiImport.set(false)"
+        (imported)="showKiImport.set(false)"
+      />
+    }
     @if (svc.isDashboard()) {
-      <app-dashboard />
+      <app-dashboard (openImport)="showKiImport.set(true)" />
     } @else {
     <div class="main-layout">
       @switch (svc.activeTabType()) {
@@ -122,6 +130,7 @@ import { ProcessService } from './services/process.service';
 export class App {
   svc = inject(ProcessService);
   overviewWidth = signal(560);
+  showKiImport = signal(false);
 
   onResizeStart(e: MouseEvent) {
     e.preventDefault();
