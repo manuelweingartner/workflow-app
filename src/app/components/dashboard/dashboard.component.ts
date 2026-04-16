@@ -23,6 +23,10 @@ import { Process } from '../../models/process.model';
       <div class="dashboard-header">
         <h1>Mein Dashboard</h1>
         <div class="header-actions">
+          <button class="btn-new-template" (click)="openNewTemplate.emit()">
+            <i class="material-icons">add_circle_outline</i>
+            Neue Vorlage
+          </button>
           <button class="btn-import-ki" (click)="openImport.emit()">
             <span class="ki-badge">KI+</span>
             <i class="material-icons">cloud_upload</i>
@@ -204,6 +208,14 @@ import { Process } from '../../models/process.model';
     }
     .btn-import-ki:hover { box-shadow: 0 4px 14px rgba(124,58,237,0.45); transform: translateY(-1px); }
     .btn-import-ki .material-icons { font-size: 17px; }
+    .btn-new-template {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 16px; border: 1.5px solid #009fe3; border-radius: 20px;
+      background: white; color: #009fe3; font-size: 13px; font-family: inherit;
+      cursor: pointer; transition: background 0.15s, box-shadow 0.2s, transform 0.15s;
+    }
+    .btn-new-template:hover { background: #e8f5fb; box-shadow: 0 2px 8px rgba(0,159,227,0.2); transform: translateY(-1px); }
+    .btn-new-template .material-icons { font-size: 17px; }
     .ki-badge {
       font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.25);
       border-radius: 4px; padding: 1px 5px; letter-spacing: 0.05em;
@@ -306,6 +318,7 @@ import { Process } from '../../models/process.model';
 })
 export class DashboardComponent {
   @Output() openImport = new EventEmitter<void>();
+  @Output() openNewTemplate = new EventEmitter<void>();
   svc = inject(ProcessService);
 
   templateName(templateId: string | undefined): string {

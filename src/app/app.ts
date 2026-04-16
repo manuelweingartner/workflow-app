@@ -15,6 +15,7 @@ import { SitzungViewComponent } from './components/sitzung-view/sitzung-view.com
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { AiAssistantComponent } from './components/ai-assistant/ai-assistant.component';
 import { KiImportDialogComponent } from './components/ki-import-dialog/ki-import-dialog.component';
+import { NewTemplateDialogComponent } from './components/new-template-dialog/new-template-dialog.component';
 import { ProcessService } from './services/process.service';
 
 @Component({
@@ -25,7 +26,7 @@ import { ProcessService } from './services/process.service';
     DocumentsViewComponent, TasksViewComponent, DossierDetailsComponent, DossierOverviewComponent,
     ServiceRequestComponent, NotesViewComponent, ParticipantsViewComponent,
     ProcessViewComponent, SitzungViewComponent, DashboardComponent, AiAssistantComponent,
-    KiImportDialogComponent,
+    KiImportDialogComponent, NewTemplateDialogComponent,
   ],
   template: `
     <app-header />
@@ -36,8 +37,17 @@ import { ProcessService } from './services/process.service';
         (imported)="showKiImport.set(false)"
       />
     }
+    @if (showNewTemplate()) {
+      <app-new-template-dialog
+        (closed)="showNewTemplate.set(false)"
+        (created)="showNewTemplate.set(false)"
+      />
+    }
     @if (svc.isDashboard()) {
-      <app-dashboard (openImport)="showKiImport.set(true)" />
+      <app-dashboard
+        (openImport)="showKiImport.set(true)"
+        (openNewTemplate)="showNewTemplate.set(true)"
+      />
     } @else {
     <div class="main-layout">
       @switch (svc.activeTabType()) {
@@ -131,6 +141,7 @@ export class App {
   svc = inject(ProcessService);
   overviewWidth = signal(560);
   showKiImport = signal(false);
+  showNewTemplate = signal(false);
 
   onResizeStart(e: MouseEvent) {
     e.preventDefault();
