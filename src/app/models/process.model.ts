@@ -89,11 +89,13 @@ export interface Branch {
   label: string;
   condition: string;
   steps: ProcessStep[];   // each branch owns its own step sequence
+  isDefault?: boolean;    // marks the happy-path branch (from connection.metadata.simpleView.defaultPath)
 }
 
 export interface ProcessStep {
-  // Discriminator: 'step' = actual work, 'gateway' = control flow routing
-  kind?: 'step' | 'gateway';
+  // Discriminator: 'step' = actual work, 'gateway' = control flow routing,
+  // 'unknown-future' = render a "weiterer Verlauf hängt von Entscheid ab" marker
+  kind?: 'step' | 'gateway' | 'unknown-future';
 
   id: string;
   number: string;
@@ -108,6 +110,10 @@ export interface ProcessStep {
   // For kind='gateway': what type of control flow?
   gatewayType?: GatewayType;      // 'decision' | 'parallel' | 'loop'
   chosenBranchId?: string;        // for gatewayType='decision' on instances: which branch was taken
+
+  // True when this step lies downstream of an unresolved decision-with-default-path.
+  // The UI renders such steps with dashed lines to signal that execution is predicted, not certain.
+  predicted?: boolean;
 
   // Gateway data (populated when kind='gateway')
   branches?: Branch[];             // for gatewayType='decision' — each branch owns its steps

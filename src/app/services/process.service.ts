@@ -4,6 +4,40 @@ import {
   Input, Task, CompletionCriterion, PortalMessage, PortalDocument, Note, Participant,
   AppTab, TabType, Sitzung, GatewayType, WorkflowEvent,
 } from '../models/process.model';
+import { processToElsa } from '../elsa/process-to-elsa.adapter';
+import { translateWorkflow } from '../elsa/workflow-translator';
+import { mergeInstanceState } from '../elsa/instance-state-merger';
+import { pruneFuture } from '../elsa/future-pruner';
+import { ElsaWorkflow } from '../elsa/elsa-workflow.types';
+
+// Run all mock Process objects through the Elsa pipeline:
+// Process → Elsa shape → translateWorkflow → mergeInstanceState → pruneFuture
+function buildProcessesViaElsa(sources: Process[]): Process[] {
+  // Deduplicate workflows by id (multiple instances may share one template)
+  const workflows = new Map<string, ElsaWorkflow>();
+  const pairs = sources.map(p => processToElsa(p));
+  for (const { workflow } of pairs) {
+    if (!workflows.has(workflow.id)) workflows.set(workflow.id, workflow);
+  }
+  return pairs.map(({ workflow, instance }) => {
+    const wf = workflows.get(workflow.id)!;
+    const template = translateWorkflow(wf);
+    const sourceProcess = sources.find(s => s.id === instance.instanceId)!;
+    const merged = mergeInstanceState(template, instance);
+    // Preserve original kind ('template' for processes that weren't instances)
+    if (sourceProcess.kind !== 'instance') {
+      merged.id = sourceProcess.id;
+      merged.kind = 'template';
+      merged.templateId = undefined;
+      merged.startedAt = undefined;
+      merged.startedBy = undefined;
+      merged.instanceState = undefined;
+      // Templates show the full structure; don't prune unknown futures.
+      return merged;
+    }
+    return pruneFuture(merged);
+  });
+}
 
 export interface LinkedDocument {
   input: Input;
@@ -29,7 +63,7 @@ export interface LinkedField {
 @Injectable({ providedIn: 'root' })
 export class ProcessService {
   // --- Core data ---
-  private _processes = signal<Process[]>(ALL_PROCESSES);
+  private _processes = signal<Process[]>(buildProcessesViaElsa(ALL_PROCESSES));
   private _contextObjects = signal<ContextObject[]>(ALL_CONTEXT_OBJECTS);
   private _dossiers = signal<Dossier[]>(ALL_DOSSIERS);
   private _sitzungen = signal<Sitzung[]>(ALL_SITZUNGEN);
@@ -978,7 +1012,7 @@ const PROCESS_BAUGESUCH: Process = {
       kind: 'gateway', gatewayType: 'decision',
       responsible: '', category: 'Bewilligungsverfahren',
       branches: [
-        { id: 'b5-1', label: 'Bewilligt', condition: 'Entscheid == "Bewilligt"', steps: [] },
+        { id: 'b5-1', label: 'Bewilligt', condition: 'Entscheid == "Bewilligt"', steps: [], isDefault: true },
         { id: 'b5-2', label: 'Mit Auflagen', condition: 'Entscheid == "Bewilligt mit Auflagen"', steps: [] },
         { id: 'b5-3', label: 'Abgelehnt', condition: 'Entscheid == "Abgelehnt"', steps: [] },
       ],
@@ -1284,7 +1318,7 @@ const PROCESS_EINBUERGERUNG: Process = {
       kind: 'gateway', gatewayType: 'decision',
       responsible: '', category: 'Einbürgerung',
       branches: [
-        { id: 'beb-1', label: 'Empfohlen', condition: 'Empfehlung == "Empfohlen"', steps: [] },
+        { id: 'beb-1', label: 'Empfohlen', condition: 'Empfehlung == "Empfohlen"', steps: [], isDefault: true },
         { id: 'beb-2', label: 'Nicht empfohlen', condition: 'Empfehlung == "Nicht empfohlen"', steps: [] },
         { id: 'beb-3', label: 'Zurückgestellt', condition: 'Empfehlung == "Zurückgestellt"', steps: [] },
       ],
@@ -1454,7 +1488,7 @@ const PROCESS_GEMEINDERAT: Process = {
       kind: 'gateway', gatewayType: 'decision',
       responsible: '', category: 'Gemeinderat',
       branches: [
-        { id: 'bgr-1', label: 'Angenommen', condition: 'Beschluss == "Angenommen"', steps: [] },
+        { id: 'bgr-1', label: 'Angenommen', condition: 'Beschluss == "Angenommen"', steps: [], isDefault: true },
         { id: 'bgr-2', label: 'Abgelehnt', condition: 'Beschluss == "Abgelehnt"', steps: [] },
         { id: 'bgr-3', label: 'Zurückgestellt', condition: 'Beschluss == "Zurückgestellt"', steps: [] },
       ],
@@ -1884,7 +1918,7 @@ const INSTANCE_BAUGESUCH_1: Process = {
       responsible: '', category: 'Entscheid',
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
       branches: [
-        { id: 'ib1-br-bewilligt', label: 'Bewilligt', condition: 'Alle Fachberichte positiv', steps: [
+        { id: 'ib1-br-bewilligt', label: 'Bewilligt', condition: 'Alle Fachberichte positiv', isDefault: true, steps: [
           { id: 'ib1-br1-1', number: '7001', title: 'Baubewilligung ausstellen', status: 'pending', responsible: 'Oberholzer Martin', category: 'Entscheid', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }
         ]},
         { id: 'ib1-br-auflagen', label: 'Bewilligt mit Auflagen', condition: 'Korrekturen erforderlich', steps: [] },

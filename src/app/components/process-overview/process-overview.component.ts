@@ -347,7 +347,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                     <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="#bdbdbd" stroke-width="2"/></svg>
                   }
                 </div>
-                @if (!last) { <div class="connector-line" [class]="step.status"></div> }
+                @if (!last) { <div class="connector-line" [class]="step.status" [class.predicted]="step.predicted"></div> }
               </div>
               <div class="step-content">
                 <div class="step-title-row">
@@ -399,7 +399,12 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
           @for (step of svc.steps(); track step.id; let last = $last) {
             <ng-container>
 
-              @if (step.kind === 'gateway') {
+              @if (step.kind === 'unknown-future') {
+                <div class="unknown-future-marker">
+                  <i class="material-icons">help_outline</i>
+                  <span>{{ step.title }}</span>
+                </div>
+              } @else if (step.kind === 'gateway') {
                 <!-- ===== GATEWAY SECTION (branch-first, no box) ===== -->
                 <div class="gw-section" [class]="step.gatewayType">
                   <!-- Thin header: type pill + title + collapse — not a hoverable box -->
@@ -426,11 +431,14 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                         @for (branch of step.branches; track branch.id) {
                           <div class="gw-lane decision"
                             [class.branch-chosen]="step.chosenBranchId === branch.id"
-                            [class.branch-unchosen]="step.chosenBranchId && step.chosenBranchId !== branch.id">
+                            [class.branch-unchosen]="step.chosenBranchId && step.chosenBranchId !== branch.id"
+                            [class.branch-default]="branch.isDefault && !step.chosenBranchId">
                             <div class="gw-lane-hdr">
                               <span class="gw-lane-label">{{ branch.label }}</span>
                               @if (step.chosenBranchId === branch.id) {
                                 <span class="chosen-badge"><i class="material-icons">check_circle</i> Gewählt</span>
+                              } @else if (branch.isDefault && !step.chosenBranchId) {
+                                <span class="default-badge" title="Erwarteter Pfad — Folgeschritte werden basierend auf diesem Pfad angezeigt"><i class="material-icons">trending_flat</i> Default-Pfad</span>
                               }
                               @if (branch.condition) { <span class="gw-lane-cond">{{ branch.condition }}</span> }
                               @if (!step.chosenBranchId) {
@@ -668,6 +676,12 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
           </div>
 
           @for (step of svc.steps(); track step.id; let idx = $index; let last = $last) {
+            @if (step.kind === 'unknown-future') {
+              <div class="fc-unknown-future">
+                <i class="material-icons">help_outline</i>
+                <span>{{ step.title }}</span>
+              </div>
+            } @else {
             <div class="fc-node-wrapper" [class.dragging]="dragSourceIndex() === idx">
               <div class="fc-node"
                    [class.gateway]="step.kind === 'gateway'"
@@ -796,6 +810,7 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
                 <div class="fc-drop-line"></div>
               </div>
             </div>
+            }
           }
 
           <!-- End node -->
@@ -817,6 +832,53 @@ import { ProcessStep, GatewayType, StepType } from '../../models/process.model';
   `,
   styles: `
     :host { display: block; width: 100%; flex-shrink: 0; }
+
+    /* Unknown-future marker — placeholder when post-decision sequence is unpredictable */
+    .unknown-future-marker {
+      display: flex; align-items: center; gap: 10px;
+      margin: 16px 0 16px 40px; padding: 14px 18px;
+      border: 1px dashed #b8c0cc; border-radius: 6px;
+      background: #f6f8fa; color: #586475;
+      font-style: italic; font-size: 13px;
+    }
+    .unknown-future-marker .material-icons { color: #8b96a4; font-size: 20px; }
+
+    .fc-unknown-future {
+      display: flex; align-items: center; gap: 8px;
+      margin: 8px auto; padding: 10px 14px;
+      border: 1px dashed #b8c0cc; border-radius: 6px;
+      background: #f6f8fa; color: #586475;
+      font-style: italic; font-size: 12px; max-width: 380px;
+    }
+    .fc-unknown-future .material-icons { color: #8b96a4; font-size: 18px; }
+
+    /* Default-path branch indicator — marks the expected happy-path branch at a pending decision */
+    .gw-lane.branch-default {
+      border-left: 2px solid #009fe3;
+      background: linear-gradient(to right, rgba(0,159,227,0.04) 0%, transparent 60%);
+    }
+    .default-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      margin-left: 8px; padding: 2px 8px;
+      background: rgba(0,159,227,0.10); color: #009fe3;
+      border: 1px solid rgba(0,159,227,0.35); border-radius: 10px;
+      font-size: 11px; font-weight: 500;
+    }
+    .default-badge .material-icons { font-size: 13px; }
+
+    /* Predicted steps in the SIMPLE VIEW only — downstream of an unresolved
+       decision-with-default-path. Only the vertical connector-line below the
+       step's status circle is dashed; the step-row itself stays unchanged. */
+    .steps-list .connector-line.predicted {
+      background: repeating-linear-gradient(to bottom, #bdbdbd 0 3px, transparent 3px 6px) !important;
+    }
+    .steps-list .connector-line.completed.predicted {
+      background: repeating-linear-gradient(to bottom, #3f971a 0 3px, transparent 3px 6px) !important;
+    }
+    .steps-list .connector-line.in-progress.predicted {
+      background: repeating-linear-gradient(to bottom, #009fe3 0 3px, transparent 3px 6px) !important;
+    }
+
     .overview {
       display: flex; flex-direction: column; height: 100%; overflow-y: auto;
       padding: 24px; min-width: 0; width: 100%;
