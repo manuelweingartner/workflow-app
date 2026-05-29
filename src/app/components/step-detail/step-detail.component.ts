@@ -223,12 +223,11 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <input type="text" [value]="step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1)"
                          (change)="updateParallelPathLabel(step.id, pi, $event)"
                          class="branch-input" [placeholder]="'Pfad ' + (pi + 1)" />
-                } @else {
-                  <span class="branch-input-readonly">{{ step.parallelPathLabels?.[pi] || 'Pfad ' + (pi + 1) }}</span>
-                }
-                <span class="branch-step-count">{{ path.length }} Schritt(e)</span>
-                @if (!isInstance()) {
+                  <span class="branch-step-count">{{ path.length }} Schritt(e)</span>
                   <button class="remove-btn" (click)="removeParallelPath(step.id, pi)">&#10005;</button>
+                } @else {
+                  <span class="branch-input-readonly">{{ parallelLabel(step, pi, path) }}</span>
+                  <span class="task-status-badge" [class]="path[0]?.status || 'pending'">{{ statusLabel(path[0]?.status || 'pending') }}</span>
                 }
               </div>
             }
@@ -1099,6 +1098,14 @@ export class StepDetailComponent {
     const procId = this.svc.activeProcess()?.id;
     if (!procId) return;
     this.svc.chooseBranch(procId, gatewayStepId, branchId, 'Sachbearbeiter:in');
+  }
+
+  /** Readable label for a parallel path: the configured label, or (when that is a
+   *  technical fallback like "path0") the first step's title. */
+  parallelLabel(step: ProcessStep, pi: number, path: ProcessStep[]): string {
+    const raw = step.parallelPathLabels?.[pi];
+    if (raw && !/^path\d+$/i.test(raw)) return raw;
+    return path[0]?.title || `Pfad ${pi + 1}`;
   }
 
   showAddTask = signal(false);

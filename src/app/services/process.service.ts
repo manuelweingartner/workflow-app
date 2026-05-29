@@ -62,6 +62,7 @@ interface DemoInstanceSeed {
   startedBy?: string;
   fieldOverrides?: FieldOverride[];
   stripContextLinks?: boolean;    // drop inherited (template) Geschäft links
+  replaceText?: { from: string; to: string };  // rename inherited text (e.g. document names)
 }
 
 const DEMO_INSTANCE_SEEDS: DemoInstanceSeed[] = [
@@ -74,7 +75,7 @@ const DEMO_INSTANCE_SEEDS: DemoInstanceSeed[] = [
   {
     instanceId: 'inst-dossier-va2', assessmentStepId: 'va-3', decisionLabels: ['Risikostufe'],
     title: 'Streetparade Zürich 2025', startedAt: '12.02.2025', startedBy: 'Hans Berger',
-    stripContextLinks: true,
+    stripContextLinks: true, replaceText: { from: 'Dorffest', to: 'Streetparade' },
     fieldOverrides: [
       { stepId: 'va-1', label: 'Veranstalter', value: 'Verein Streetparade Zürich' },
       { stepId: 'va-1', label: 'Veranstaltung', value: 'Streetparade Zürich 2025' },
@@ -159,6 +160,22 @@ function seedDemoInstances(processes: Process[]): Process[] {
         s.branches?.forEach((b) => b.steps.forEach(stripLinks));
       };
       p.steps.forEach(stripLinks);
+    }
+
+    // Rename inherited template text (e.g. "Konzept_Dorffest.pdf") across all inputs.
+    if (seed.replaceText) {
+      const { from, to } = seed.replaceText;
+      const rename = (s: ProcessStep) => {
+        s.inputs = s.inputs.map((i) => ({
+          ...i,
+          value: i.value?.split(from).join(to),
+          documentName: i.documentName?.split(from).join(to),
+        }));
+        s.parallelPaths?.forEach((path) => path.forEach(rename));
+        s.subSteps?.forEach(rename);
+        s.branches?.forEach((b) => b.steps.forEach(rename));
+      };
+      p.steps.forEach(rename);
     }
 
     for (const ov of seed.fieldOverrides ?? []) {
@@ -2132,6 +2149,7 @@ const PROCESS_VERANSTALTUNG: Process = {
       id: 'va-4', number: '4004', title: 'Fachstellen-Vernehmlassung', status: 'in-progress', dueDate: '20.03.2025',
       kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
+      parallelPathLabels: ['Feuerpolizei', 'Kantonspolizei', 'Lebensmittelkontrolle', 'Lärmschutz'],
       parallelPaths: [
         [{ id: 'va-4a', number: '4004.1', title: 'Feuerpolizei', status: 'completed', completedDate: '05.03.2025', responsible: 'Feuerpolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'va-4b', number: '4004.2', title: 'Kantonspolizei', status: 'in-progress', responsible: 'Kantonspolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
