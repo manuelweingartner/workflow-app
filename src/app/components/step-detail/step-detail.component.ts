@@ -413,7 +413,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <span class="action-label">{{ action.label }}</span>
                   @if (action.description) { <span class="action-desc">{{ action.description }}</span> }
                 </div>
-                @if (isInstance() && action.type === 'ai' && step.status === 'in-progress') {
+                @if (isInstance() && action.type === 'ai' && isAssessmentAction(action.id) && step.status === 'in-progress') {
                   <button class="action-btn ai" (click)="runAi(step.id, action.id)" [disabled]="action.aiResult?.status === 'running'">
                     @if (action.aiResult?.status === 'running') {
                       <span class="ai-spinner"></span> KI+ analysiert…
@@ -446,7 +446,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                     <button class="ai-detail-btn" (click)="openAiDetail(action.aiResult!)">
                       <i class="material-icons">article</i> Detailanalyse anzeigen
                     </button>
-                    <span class="ai-hint">Vorschlag der KI+. Die definitive Risikostufe setzt die sachbearbeitende Person unten.</span>
+                    <span class="ai-hint">Vorschlag der KI+. Die definitive Entscheidung trifft die sachbearbeitende Person unten.</span>
                   </div>
                 </div>
               }
@@ -454,22 +454,22 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           </section>
         }
 
-        <!-- Risikostufe festlegen: gated on a completed KI+ run -->
-        @if (showRiskSetter(step)) {
+        <!-- Entscheid festlegen: gated on a completed KI+ assessment -->
+        @if (showDecisionSetter(step)) {
           <section class="section risk-setter">
-            <h3>Risikostufe festlegen</h3>
+            <h3>{{ decisionLabelOf(step) }} festlegen</h3>
             <p class="risk-setter-hint">
-              Die definitive Einstufung trifft die sachbearbeitende Person. Erst mit dem Setzen der
-              Risikostufe wird die Fachstellen-Vernehmlassung gestartet.
+              Die definitive Beurteilung trifft die sachbearbeitende Person. Erst mit dem Setzen
+              wird der nächste Schritt gestartet.
             </p>
             <div class="risk-options">
-              @for (lvl of riskOptions(step); track lvl) {
-                <button class="risk-opt" [class.selected]="riskDraft() === lvl"
-                        [class]="recoClass(lvl)" (click)="riskDraft.set(lvl)">{{ lvl }}</button>
+              @for (opt of decisionOptions(step); track opt) {
+                <button class="risk-opt" [class.selected]="decisionDraft() === opt"
+                        [class]="recoClass(opt)" (click)="decisionDraft.set(opt)">{{ opt }}</button>
               }
             </div>
-            <button class="risk-confirm" [disabled]="!riskDraft()" (click)="confirmRisk(step.id)">
-              Risikostufe setzen &amp; Vernehmlassung starten
+            <button class="risk-confirm" [disabled]="!decisionDraft()" (click)="confirmDecision(step)">
+              {{ decisionLabelOf(step) }} setzen &amp; nächsten Schritt starten
             </button>
           </section>
         }
@@ -549,7 +549,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
 
         <!-- Schritt abschliessen (nur in Instanz-Modus) -->
         @if (isInstance()) {
-          @if (step.status === 'in-progress' && !isRiskStep(step)) {
+          @if (step.status === 'in-progress' && !hasAssessment(step)) {
             <div class="complete-section">
               @if (svc.canCompleteStep(step.id)) {
                 <button class="complete-btn" (click)="svc.completeStep(step.id)">
@@ -762,6 +762,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .ai-reco.risk-low { background: #eef7ea; color: #3f971a; }
     .ai-reco.risk-medium { background: #fdf3e2; color: #b9760a; }
     .ai-reco.risk-high { background: #fbeaea; color: #8c0909; }
+    .ai-reco.risk-neutral { background: #e6f4fd; color: #009fe3; }
     .ai-field-label { font-size: 12px; color: #586475; display: block; margin-bottom: 4px; }
     .ai-summary {
       width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #cbb6e6;
@@ -796,6 +797,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .risk-opt.selected.risk-low { border-color: #3f971a; background: #eef7ea; color: #2f7211; }
     .risk-opt.selected.risk-medium { border-color: #d98a0b; background: #fdf3e2; color: #92710c; }
     .risk-opt.selected.risk-high { border-color: #8c0909; background: #fbeaea; color: #8c0909; }
+    .risk-opt.selected.risk-neutral { border-color: #009fe3; background: #e6f4fd; color: #007ab8; }
     .risk-confirm {
       padding: 12px 18px; background: #009fe3; color: #fff; border: none; border-radius: 6px;
       font-size: 14px; cursor: pointer; font-family: inherit;
@@ -1012,9 +1014,9 @@ export class StepDetailComponent {
 
   isInstance = computed(() => this.svc.activeProcess()?.kind === 'instance');
 
-  // --- KI+ risk assessment ---
+  // --- KI+ assessment (recommendation + user decision) ---
   aiDetail = signal<AiAssessment | null>(null);
-  riskDraft = signal('');
+  decisionDraft = signal('');
 
   runAi(stepId: string, actionId: string) {
     this.svc.runAiAction(stepId, actionId);
@@ -1029,46 +1031,68 @@ export class StepDetailComponent {
     this.svc.updateAiSummary(stepId, actionId, html);
   }
 
-  /** The dedicated "Risikostufe" select input, if this step has one. */
-  riskInputOf(step: ProcessStep): StepInput | undefined {
-    return step.inputs.find((i) => i.label === 'Risikostufe' && i.fieldType === 'select');
+  /** Whether this AI action runs as a KI+ assessment (vs. a plain document action). */
+  isAssessmentAction(actionId: string): boolean {
+    return this.svc.isAssessmentAction(actionId);
   }
 
-  isRiskStep(step: ProcessStep): boolean {
-    return !!this.riskInputOf(step);
+  /** The completed KI+ assessment action on this step, if any. */
+  private assessmentActionOf(step: ProcessStep): { id: string; label: string } | undefined {
+    return step.actions.find(
+      (a) => a.type === 'ai' && this.svc.isAssessmentAction(a.id) && a.aiResult?.status === 'done',
+    );
   }
 
-  /** While the risk step is in progress, the dedicated setter below replaces the
-   *  generic Risikostufe input, so hide the duplicate. */
+  /** The decision label (e.g. "Risikostufe", "Zuständiges Ressort") for this step's assessment. */
+  decisionLabelOf(step: ProcessStep): string {
+    const action = step.actions.find((a) => a.type === 'ai' && this.svc.isAssessmentAction(a.id));
+    return (action && this.svc.assessmentDecisionLabel(action.id)) ?? '';
+  }
+
+  private decisionInputOf(step: ProcessStep): StepInput | undefined {
+    const label = this.decisionLabelOf(step);
+    return label ? step.inputs.find((i) => i.label === label) : undefined;
+  }
+
+  /** Hide the decision input from the generic Inputs list while the step is active,
+   *  since the dedicated setter below replaces it. */
   hideInput(step: ProcessStep, input: StepInput): boolean {
     return this.isInstance() && step.status === 'in-progress'
-      && this.isRiskStep(step) && input.label === 'Risikostufe';
+      && input.label === this.decisionLabelOf(step) && !!this.decisionLabelOf(step);
   }
 
-  riskOptions(step: ProcessStep): string[] {
-    return this.riskInputOf(step)?.options ?? [];
+  decisionOptions(step: ProcessStep): string[] {
+    return this.decisionInputOf(step)?.options ?? [];
   }
 
-  /** Show the user-driven risk-level setter only after the KI+ run is complete. */
-  showRiskSetter(step: ProcessStep): boolean {
+  /** Show the user-driven decision setter only after the KI+ run is complete. */
+  showDecisionSetter(step: ProcessStep): boolean {
     return this.isInstance()
       && step.status === 'in-progress'
-      && this.isRiskStep(step)
-      && step.actions.some((a) => a.type === 'ai' && a.aiResult?.status === 'done');
+      && !!this.assessmentActionOf(step)
+      && !!this.decisionInputOf(step);
   }
 
-  confirmRisk(stepId: string) {
-    if (!this.riskDraft()) return;
-    this.svc.setRiskLevelAndAdvance(stepId, this.riskDraft());
-    this.riskDraft.set('');
+  /** True if the step carries any KI+ assessment action (used to gate the generic
+   *  "Schritt abschliessen" button, since advancing happens via the decision setter). */
+  hasAssessment(step: ProcessStep): boolean {
+    return step.actions.some((a) => a.type === 'ai' && this.svc.isAssessmentAction(a.id));
   }
 
-  /** Maps a risk level to a colour class (low=green, medium=amber, high=red). */
+  confirmDecision(step: ProcessStep) {
+    if (!this.decisionDraft()) return;
+    this.svc.setDecisionAndAdvance(step.id, this.decisionLabelOf(step), this.decisionDraft());
+    this.decisionDraft.set('');
+  }
+
+  /** Maps a recommendation value to a colour class (green=low/positive,
+   *  amber=medium, red=high/negative, blue=neutral classification). */
   recoClass(level: string): string {
     const l = level.toLowerCase();
-    if (l.includes('hoch')) return 'risk-high';
-    if (l.includes('mittel') || l.includes('erhöht')) return 'risk-medium';
-    return 'risk-low';
+    if (/sofort|hoch|nicht berechtigt|abgelehnt|obhutsentzug/.test(l)) return 'risk-high';
+    if (/mittel|erhöht|teilweise|beistandschaft/.test(l)) return 'risk-medium';
+    if (/tief|gering|^berechtigt|\(berechtigt|befürwortet|keine massnahme/.test(l)) return 'risk-low';
+    return 'risk-neutral';
   }
 
   chooseBranch(gatewayStepId: string, branchId: string) {

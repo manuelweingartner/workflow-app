@@ -40,47 +40,65 @@ function buildProcessesViaElsa(sources: Process[]): Process[] {
 }
 
 // ============================================================
-// Veranstaltung KI+ demo seeding
+// KI+ assessment demo seeding
 // ------------------------------------------------------------
 // The Elsa pipeline rebuilds every instance's steps from the shared template,
 // so per-instance field values and step positioning cannot be expressed in the
 // instance source objects. We therefore seed them here, on the already-built
-// processes, right before they go into the signal. Goal: every running (and
-// freshly seeded) Veranstaltung instance sits exactly at the Risikobeurteilung
-// step (earlier steps completed, later steps pending), so the KI+ risk
-// assessment can be demonstrated end-to-end.
+// processes, right before they go into the signal. Goal: each demo instance sits
+// exactly on its KI+ assessment step (earlier steps completed, later steps
+// pending), so the "KI+ schlägt vor, Mensch entscheidet" pattern can be
+// demonstrated end-to-end across several processes.
 // ============================================================
 
-interface VaSeed {
-  title: string;
-  veranstalter: string;
-  veranstaltung: string;
-  datum: string;
-  besucher: string;
-  startedAt: string;
-  startedBy: string;
+interface FieldOverride { stepId: string; label: string; value: string; }
+
+interface DemoInstanceSeed {
+  instanceId: string;
+  assessmentStepId: string;       // step positioned as in-progress (carries the KI+ action)
+  decisionLabels: string[];       // select inputs the user fills; emptied so they start blank
+  title?: string;
+  startedAt?: string;
+  startedBy?: string;
+  fieldOverrides?: FieldOverride[];
+  stripContextLinks?: boolean;    // drop inherited (template) Geschäft links
 }
 
-const VA_INSTANCE_SEED: Record<string, VaSeed> = {
-  'inst-dossier-va': {
-    title: 'Dorffest Sommer 2025',
-    veranstalter: 'Turnverein Dorfname',
-    veranstaltung: 'Dorffest Sommer 2025',
-    datum: '21.06.2025 bis 22.06.2025',
-    besucher: "2'500",
-    startedAt: '20.02.2025',
-    startedBy: 'Frei Barbara',
+const DEMO_INSTANCE_SEEDS: DemoInstanceSeed[] = [
+  // Veranstaltung: Dorffest (template defaults already describe the Dorffest).
+  {
+    instanceId: 'inst-dossier-va', assessmentStepId: 'va-3', decisionLabels: ['Risikostufe'],
+    title: 'Dorffest Sommer 2025', startedAt: '20.02.2025', startedBy: 'Frei Barbara',
   },
-  'inst-dossier-va2': {
-    title: 'Streetparade Zürich 2025',
-    veranstalter: 'Verein Streetparade Zürich',
-    veranstaltung: 'Streetparade Zürich 2025',
-    datum: '09.08.2025',
-    besucher: "ca. 900'000",
-    startedAt: '12.02.2025',
-    startedBy: 'Hans Berger',
+  // Veranstaltung: Streetparade (large-scale; overrides the event data).
+  {
+    instanceId: 'inst-dossier-va2', assessmentStepId: 'va-3', decisionLabels: ['Risikostufe'],
+    title: 'Streetparade Zürich 2025', startedAt: '12.02.2025', startedBy: 'Hans Berger',
+    stripContextLinks: true,
+    fieldOverrides: [
+      { stepId: 'va-1', label: 'Veranstalter', value: 'Verein Streetparade Zürich' },
+      { stepId: 'va-1', label: 'Veranstaltung', value: 'Streetparade Zürich 2025' },
+      { stepId: 'va-1', label: 'Datum', value: '09.08.2025' },
+      { stepId: 'va-1', label: 'Erwartete Besucherzahl', value: "ca. 900'000" },
+    ],
   },
-};
+  // Gemeinderatsanfrage: KI+ Ressort-Triage.
+  {
+    instanceId: 'inst-dossier-gr', assessmentStepId: 'gr-2', decisionLabels: ['Zuständiges Ressort'],
+    startedAt: '01.03.2025', startedBy: 'Schmid Andrea',
+  },
+  // KESB-Gefahrenmeldung: KI+ Gefährdungs-Screening.
+  {
+    instanceId: 'inst-dossier-kesb', assessmentStepId: 'kes-2',
+    decisionLabels: ['Dringlichkeitsstufe', 'Sofortmassnahmen nötig'],
+    startedAt: '04.03.2025', startedBy: 'Dr. Gerber Nicole',
+  },
+  // Akteneinsicht: KI+ Datenschutz-Check.
+  {
+    instanceId: 'inst-dossier-ae', assessmentStepId: 'ae-2', decisionLabels: ['Berechtigungsstatus'],
+    startedAt: '10.03.2025', startedBy: 'Weber Claudia',
+  },
+];
 
 function setStepInputValue(steps: ProcessStep[], stepId: string, label: string, value: string): void {
   const step = steps.find((s) => s.id === stepId);
@@ -100,24 +118,30 @@ function resetStepSubtreeToPending(step: ProcessStep): void {
   step.branches?.forEach((b) => b.steps.forEach(resetStepSubtreeToPending));
 }
 
-function seedVeranstaltungInstances(processes: Process[]): Process[] {
+function seedDemoInstances(processes: Process[]): Process[] {
   for (const p of processes) {
-    const seed = p.kind === 'instance' ? VA_INSTANCE_SEED[p.id] : undefined;
+    const seed = p.kind === 'instance'
+      ? DEMO_INSTANCE_SEEDS.find((s) => s.instanceId === p.id)
+      : undefined;
     if (!seed) continue;
 
     // The Elsa pipeline shares step/input/action array references between the
     // template and all its instances (one workflow definition). Deep-clone this
     // instance's steps before mutating, so per-instance values don't leak across.
     p.steps = structuredClone(p.steps);
-    p.title = seed.title;
-    p.startedAt = seed.startedAt;
-    p.startedBy = seed.startedBy;
+    if (seed.title) p.title = seed.title;
+    if (seed.startedAt) p.startedAt = seed.startedAt;
+    if (seed.startedBy) p.startedBy = seed.startedBy;
+    const actor = seed.startedBy ?? p.startedBy ?? 'Sachbearbeiter:in';
 
-    // Position the instance exactly at the Risikobeurteilung step.
-    for (const step of p.steps) {
-      if (step.id === 'va-1' || step.id === 'va-2') {
+    // Position the instance: everything before the assessment step is done, the
+    // assessment step is in progress, everything after is pending.
+    const assessmentIdx = p.steps.findIndex((s) => s.id === seed.assessmentStepId);
+    p.steps.forEach((step, i) => {
+      if (assessmentIdx === -1) return;
+      if (i < assessmentIdx) {
         step.status = 'completed';
-      } else if (step.id === 'va-3') {
+      } else if (i === assessmentIdx) {
         step.status = 'in-progress';
         step.completedDate = undefined;
         step.tasks = step.tasks.map((t) => ({ ...t, status: 'open' as const, resultValue: undefined }));
@@ -125,12 +149,9 @@ function seedVeranstaltungInstances(processes: Process[]): Process[] {
       } else {
         resetStepSubtreeToPending(step);
       }
-    }
+    });
 
-    // The template links every step to the Dorffest Geschäft (2025-0071). Correct
-    // for the Dorffest instance but misleading elsewhere, so strip inherited
-    // context links from non-Dorffest instances.
-    if (p.id !== 'inst-dossier-va') {
+    if (seed.stripContextLinks) {
       const stripLinks = (s: ProcessStep) => {
         s.contextLinks = [];
         s.parallelPaths?.forEach((path) => path.forEach(stripLinks));
@@ -140,17 +161,28 @@ function seedVeranstaltungInstances(processes: Process[]): Process[] {
       p.steps.forEach(stripLinks);
     }
 
-    // Per-instance application data the KI+ assessment reasons about.
-    setStepInputValue(p.steps, 'va-1', 'Veranstalter', seed.veranstalter);
-    setStepInputValue(p.steps, 'va-1', 'Veranstaltung', seed.veranstaltung);
-    setStepInputValue(p.steps, 'va-1', 'Datum', seed.datum);
-    setStepInputValue(p.steps, 'va-1', 'Erwartete Besucherzahl', seed.besucher);
-    // The risk level is set by the user, deliberately not by the KI+, so start empty.
-    setStepInputValue(p.steps, 'va-3', 'Risikostufe', '');
+    for (const ov of seed.fieldOverrides ?? []) {
+      setStepInputValue(p.steps, ov.stepId, ov.label, ov.value);
+    }
+    // Decision fields are filled by the user, deliberately not by the KI+, so blank.
+    for (const label of seed.decisionLabels) {
+      setStepInputValue(p.steps, seed.assessmentStepId, label, '');
+    }
 
+    // Audit log: a started event plus one per already-completed step (newest first).
+    const completed = assessmentIdx > 0 ? p.steps.slice(0, assessmentIdx) : [];
     p.events = [
-      { id: `${p.id}-ev2`, timestamp: '2025-02-22T11:00:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: seed.startedBy, stepId: 'va-2', stepTitle: 'Vollständigkeitsprüfung' },
-      { id: `${p.id}-ev1`, timestamp: '2025-02-20T09:00:00Z', type: 'started', description: `Workflow «${seed.title}» gestartet von ${seed.startedBy}`, actor: seed.startedBy },
+      ...completed.slice().reverse().map((s, k) => ({
+        id: `${p.id}-evc${k}`,
+        timestamp: `2025-03-0${Math.min(9, 2 + k)}T10:00:00Z`,
+        type: 'step_completed' as const,
+        description: `Schritt «${s.title}» abgeschlossen`,
+        actor, stepId: s.id, stepTitle: s.title,
+      })),
+      {
+        id: `${p.id}-ev0`, timestamp: '2025-03-01T09:00:00Z', type: 'started' as const,
+        description: `Workflow «${p.title}» gestartet von ${actor}`, actor,
+      },
     ];
   }
   return processes;
@@ -282,6 +314,145 @@ function generateRiskAssessment(proc: Process): GeneratedAssessment {
   };
 }
 
+// --- Gemeinderat: Ressort-Triage ------------------------------------------
+function generateTriageAssessment(proc: Process): GeneratedAssessment {
+  const antrag = readInputValue(proc, 'Antragsteller:in') || readInputValue(proc, 'Antragsteller') || 'unbekannt';
+  const betreff = readInputValue(proc, 'Betreff') || proc.title;
+  const t = betreff.toLowerCase();
+
+  let ressort = 'Bau & Planung';
+  let begruendung = 'Zuordnung anhand des Gesamtkontexts der Anfrage.';
+  let sekundaer = '';
+  if (/tempo|verkehr|strasse|parkier|velo|fussg|signal|kreisel|schulweg|mobilit/.test(t)) {
+    ressort = 'Verkehr & Infrastruktur';
+    begruendung = 'Die Anfrage betrifft Verkehrssicherheit und Strassenraum, klar im Bereich Verkehr und Infrastruktur.';
+    if (/schul|kind/.test(t)) sekundaer = 'Bildung (Aspekt Schulwegsicherheit)';
+  } else if (/schul|bildung|kita|lehr|tagesstruktur/.test(t)) {
+    ressort = 'Bildung'; begruendung = 'Die Anfrage betrifft den Bildungsbereich.';
+  } else if (/bau|zone|planung|raumplan|umbau|quartier|ortsplan/.test(t)) {
+    ressort = 'Bau & Planung'; begruendung = 'Die Anfrage betrifft Planung und Baurecht.';
+  } else if (/steuer|gebühr|budget|finanz|rechnung|kredit/.test(t)) {
+    ressort = 'Finanzen'; begruendung = 'Die Anfrage betrifft Finanzen und Gebühren.';
+  } else if (/sozial|alter|integration|asyl|familie|gesundheit/.test(t)) {
+    ressort = 'Soziales'; begruendung = 'Die Anfrage betrifft den Sozialbereich.';
+  }
+
+  const meta = `<p class="ai-meta"><strong>Antragsteller:in:</strong> ${antrag} &nbsp;·&nbsp; <strong>Betreff:</strong> ${betreff}</p>`;
+  const sekLi = sekundaer ? `<li><strong>Sekundär betroffen:</strong> ${sekundaer}</li>` : '';
+  return {
+    recommendedLevel: ressort,
+    summary:
+      `<p>Anfrage <strong>«${betreff}»</strong> von ${antrag}.</p>` +
+      `<p>${begruendung}</p>` +
+      `<ul><li><strong>Vorschlag zuständiges Ressort:</strong> ${ressort}</li>${sekLi}</ul>` +
+      `<p><strong>Empfohlenes Ressort: ${ressort}.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Klassifikation der Anfrage</h4><p>${begruendung}</p>` +
+      `<h4>2. Vorschlag</h4><ul><li><strong>Federführung:</strong> ${ressort}</li>${sekLi || '<li>Keine wesentliche Mitbetroffenheit weiterer Ressorts erkannt.</li>'}</ul>` +
+      `<h4>3. Hinweise zur weiteren Bearbeitung</h4><ul><li>Bei ressortübergreifenden Aspekten Mitbericht einholen</li><li>allfällige Fristen und Vorstoss-Typ (Anfrage, Motion, Postulat) prüfen</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> Federführung durch <strong>${ressort}</strong> empfohlen. Die definitive Zuweisung obliegt der sachbearbeitenden Person.</p>`,
+  };
+}
+
+// --- KESB: Gefährdungs-Screening ------------------------------------------
+function generateKesbScreening(proc: Process): GeneratedAssessment {
+  const betroffen = readInputValue(proc, 'Betroffene Person(en)') || 'unbekannt';
+  const art = readInputValue(proc, 'Art der Gefährdung') || readInputValue(proc, 'Betreff') || '';
+  const a = art.toLowerCase();
+
+  let level = 'Mittel';
+  let sofort = 'Nein';
+  let einschaetzung = 'Hinweise auf eine Gefährdung, jedoch ohne akute Anzeichen.';
+  if (/akut|gewalt|misshandl|missbrauch|suizid|lebensgefahr|sofort|flucht/.test(a)) {
+    level = 'Sofort'; sofort = 'Ja';
+    einschaetzung = 'Anzeichen einer akuten, schwerwiegenden Gefährdung. Es ist umgehend zu handeln.';
+  } else if (/vernachläss|verwahrlos|verdacht|kindeswohl|überforder/.test(a)) {
+    level = 'Hoch'; sofort = 'Nein';
+    einschaetzung = 'Ernstzunehmende Hinweise auf eine Gefährdung des Kindeswohls, eine zeitnahe Abklärung ist angezeigt.';
+  } else if (/konflikt|streit|finanz|betreuung/.test(a)) {
+    level = 'Mittel'; einschaetzung = 'Belastungssituation mit Klärungsbedarf, ohne akute Gefährdung.';
+  }
+  const minor = /kind|jährig|jahre|minderjähr/.test(betroffen.toLowerCase());
+
+  const meta = `<p class="ai-meta"><strong>Betroffene Person(en):</strong> ${betroffen} &nbsp;·&nbsp; <strong>Art der Gefährdung:</strong> ${art}</p>`;
+  return {
+    recommendedLevel: level,
+    summary:
+      `<p>Meldung betreffend <strong>${betroffen}</strong>, gemeldet als <strong>${art}</strong>.</p>` +
+      `<p>${einschaetzung}</p>` +
+      `<ul>` +
+      `<li><strong>Vorschlag Dringlichkeitsstufe:</strong> ${level}</li>` +
+      `<li><strong>Sofortmassnahmen nötig:</strong> ${sofort}</li>` +
+      (minor ? `<li>Minderjährige betroffen, erhöhte Sorgfalt</li>` : '') +
+      `</ul>` +
+      `<p><strong>Empfohlene Dringlichkeitsstufe: ${level}.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Erste Einschätzung</h4><p>${einschaetzung}</p>` +
+      `<h4>2. Risikoindikatoren</h4><ul>` +
+      (minor ? `<li>minderjährige, abhängige Person betroffen</li>` : `<li>keine minderjährige Person ausgewiesen</li>`) +
+      `<li>gemeldeter Sachverhalt: ${art}</li>` +
+      `<li>Abgleich mit bisherigen Meldungen zur betroffenen Person empfohlen</li></ul>` +
+      `<h4>3. Sofortmassnahmen</h4><p>${sofort === 'Ja'
+        ? 'Eine superprovisorische Massnahme bzw. sofortige Sicherung ist zu prüfen.'
+        : 'Aktuell keine superprovisorische Massnahme angezeigt, eine zeitnahe Abklärung genügt voraussichtlich.'}</p>` +
+      `<h4>4. Nächste Schritte</h4><ul><li>Abklärungsauftrag erteilen</li><li>Abklärungsperson mandatieren</li><li>Fristen gemäss Dringlichkeit setzen</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> Dringlichkeitsstufe <strong>${level}</strong> empfohlen. Die definitive Beurteilung obliegt der KESB.</p>`,
+  };
+}
+
+// --- Akteneinsicht: Datenschutz-Check / Berechtigung ----------------------
+function generateDatenschutzCheck(proc: Process): GeneratedAssessment {
+  const antrag = readInputValue(proc, 'Antragsteller') || readInputValue(proc, 'Antragsteller:in') || 'unbekannt';
+  const dossier = readInputValue(proc, 'Betroffenes Dossier') || proc.title;
+  const d = dossier.toLowerCase();
+
+  let status = 'Berechtigt (persönliche Betroffenheit)';
+  let basis = 'Die antragstellende Person ist im betroffenen Dossier persönlich betroffen.';
+  if (/planung|verkehr|zone|raumplan|öffentlich|projekt|infrastruktur|budget|gemeinde/.test(d)) {
+    status = 'Berechtigt (öffentliches Interesse)';
+    basis = 'Das Dossier betrifft eine Angelegenheit von öffentlichem Interesse, ein berechtigtes Einsichtsinteresse ist plausibel.';
+  }
+
+  const meta = `<p class="ai-meta"><strong>Antragsteller:in:</strong> ${antrag} &nbsp;·&nbsp; <strong>Betroffenes Dossier:</strong> ${dossier}</p>`;
+  return {
+    recommendedLevel: status,
+    summary:
+      `<p>Einsichtsgesuch von <strong>${antrag}</strong> betreffend <strong>${dossier}</strong>.</p>` +
+      `<p>${basis}</p>` +
+      `<ul>` +
+      `<li><strong>Vorschlag Berechtigung:</strong> ${status}</li>` +
+      `<li><strong>Datenschutz:</strong> Personendaten Dritter sind vor Herausgabe zu schwärzen</li>` +
+      `</ul>` +
+      `<p><strong>Empfehlung: ${status}.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Berechtigung</h4><p>${basis}</p>` +
+      `<h4>2. Datenschutz-Prüfung</h4><ul>` +
+      `<li>schützenswerte Personendaten Dritter im Dossier wahrscheinlich, vor Herausgabe schwärzen</li>` +
+      `<li>besonders schützenswerte Daten (Gesundheit, Massnahmen) gesondert prüfen</li>` +
+      `<li>Verhältnismässigkeit zwischen Einsichtsinteresse und Persönlichkeitsschutz wahren</li></ul>` +
+      `<h4>3. Empfohlenes Vorgehen</h4><ul><li>Identität der antragstellenden Person verifizieren</li><li>relevante Akten zusammenstellen und schwärzen</li><li>Umfang der Einsicht begründet festlegen</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> <strong>${status}</strong> empfohlen, unter Auflage der Schwärzung von Personendaten Dritter. Die definitive Beurteilung obliegt der sachbearbeitenden Person.</p>`,
+  };
+}
+
+// Registry of KI+ assessment actions: action id -> assistant, the decision the
+// user makes afterwards, and the generator that produces the recommendation.
+// AI actions NOT listed here (document drafts, summaries) keep the plain button.
+interface AssessmentConfig {
+  assistantName: string;
+  decisionLabel: string;
+  generate: (proc: Process) => GeneratedAssessment;
+}
+const ASSESSMENT_ACTIONS: Record<string, AssessmentConfig> = {
+  'va-a2': { assistantName: 'KI+ Risikoanalyse Veranstaltungen', decisionLabel: 'Risikostufe', generate: generateRiskAssessment },
+  'gr-a2': { assistantName: 'KI+ Ressort-Triage', decisionLabel: 'Zuständiges Ressort', generate: generateTriageAssessment },
+  'kes-a2': { assistantName: 'KI+ Gefährdungs-Screening', decisionLabel: 'Dringlichkeitsstufe', generate: generateKesbScreening },
+  'ae-a2': { assistantName: 'KI+ Datenschutz-Check', decisionLabel: 'Berechtigungsstatus', generate: generateDatenschutzCheck },
+};
+
 export interface LinkedDocument {
   input: Input;
   stepId: string;
@@ -306,7 +477,7 @@ export interface LinkedField {
 @Injectable({ providedIn: 'root' })
 export class ProcessService {
   // --- Core data ---
-  private _processes = signal<Process[]>(seedVeranstaltungInstances(buildProcessesViaElsa(ALL_PROCESSES)));
+  private _processes = signal<Process[]>(seedDemoInstances(buildProcessesViaElsa(ALL_PROCESSES)));
   private _contextObjects = signal<ContextObject[]>(ALL_CONTEXT_OBJECTS);
   private _dossiers = signal<Dossier[]>(ALL_DOSSIERS);
   private _sitzungen = signal<Sitzung[]>(ALL_SITZUNGEN);
@@ -1076,16 +1247,29 @@ export class ProcessService {
     this._processes.set(ps);
   }
 
-  /** Triggers the configured KI+ assistant for an AI action. Runs "in the background"
-   *  (short delay) and writes the resulting assessment back onto the action. */
+  /** True if this AI action is a registered KI+ assessment (recommendation + decision),
+   *  as opposed to a plain document-/text-generating AI action. */
+  isAssessmentAction(actionId: string): boolean {
+    return actionId in ASSESSMENT_ACTIONS;
+  }
+
+  /** The decision field (select-input label) the user fills after this assessment. */
+  assessmentDecisionLabel(actionId: string): string | undefined {
+    return ASSESSMENT_ACTIONS[actionId]?.decisionLabel;
+  }
+
+  /** Triggers the configured KI+ assistant for an assessment action. Runs "in the
+   *  background" (short delay) and writes the resulting assessment back onto the action. */
   runAiAction(stepId: string, actionId: string): void {
     const proc = this.activeProcess();
     if (!proc || proc.kind !== 'instance') return;
     const step = this.findStepInTree(proc.steps, stepId);
     const action = step?.actions.find((a) => a.id === actionId);
     if (!step || !action || action.type !== 'ai' || step.status !== 'in-progress') return;
+    const config = ASSESSMENT_ACTIONS[actionId];
+    if (!config) return; // not an assessment action
 
-    const assistantName = 'KI+ Risikoanalyse Veranstaltungen';
+    const assistantName = config.assistantName;
     this.patchActionResult(proc.id, stepId, actionId, {
       status: 'running', assistantName, recommendedLevel: '', summary: '', detail: '',
     });
@@ -1098,7 +1282,7 @@ export class ProcessService {
       this.aiTimers.delete(timerKey);
       const current = this._processes().find((p) => p.id === procId);
       if (!current) return;
-      const a = generateRiskAssessment(current);
+      const a = config.generate(current);
       this.patchActionResult(procId, stepId, actionId, {
         status: 'done', assistantName,
         recommendedLevel: a.recommendedLevel, summary: a.summary, detail: a.detail,
@@ -1110,7 +1294,7 @@ export class ProcessService {
         if (!p.events) p.events = [];
         p.events.unshift({
           id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'note_added',
-          description: `KI+ Risikoanalyse ausgeführt, Empfehlung: ${a.recommendedLevel}`,
+          description: `${assistantName} ausgeführt, Empfehlung: ${a.recommendedLevel}`,
           actor: assistantName, stepId, stepTitle: step.title,
         });
         this._processes.set(ps);
@@ -1133,9 +1317,9 @@ export class ProcessService {
     }
   }
 
-  /** The user sets the definitive risk level (not the KI+). This closes the
-   *  Risikobeurteilung step and starts the Fachstellen-Vernehmlassung. */
-  setRiskLevelAndAdvance(stepId: string, level: string): void {
+  /** The user sets the definitive decision (the value the KI+ only recommended).
+   *  This closes the assessment step and starts the next step. */
+  setDecisionAndAdvance(stepId: string, label: string, value: string): void {
     const proc = this.activeProcess();
     if (!proc) return;
     const ps = structuredClone(this._processes());
@@ -1144,18 +1328,18 @@ export class ProcessService {
     const step = this.findStepInTree(p.steps, stepId);
     if (!step || step.status !== 'in-progress') return;
 
-    const riskInput = step.inputs.find((i) => i.label === 'Risikostufe');
-    if (riskInput) riskInput.value = level;
+    const decisionInput = step.inputs.find((i) => i.label === label);
+    if (decisionInput) decisionInput.value = value;
     step.status = 'completed';
     step.completedDate = new Date().toLocaleDateString('de-CH');
     step.completionCriteria = step.completionCriteria.map((c) => ({ ...c, met: true }));
 
-    // Activate the next top-level step (Fachstellen-Vernehmlassung, a parallel gateway).
+    // Activate the next top-level step.
     const idx = p.steps.findIndex((s) => s.id === stepId);
     const next = idx !== -1 ? p.steps[idx + 1] : undefined;
     if (next && next.status === 'pending') {
       next.status = 'in-progress';
-      // Kick off the parallel fachstellen consultations.
+      // If the next step fans out in parallel, kick off each path.
       next.parallelPaths?.forEach((path) => {
         const first = path[0];
         if (first && first.status === 'pending') first.status = 'in-progress';
@@ -1172,7 +1356,7 @@ export class ProcessService {
     }
     p.events.unshift({
       id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'step_completed',
-      description: `Risikostufe «${level}» gesetzt, Risikobeurteilung abgeschlossen`,
+      description: `${label} «${value}» gesetzt, Schritt «${step.title}» abgeschlossen`,
       actor: 'Sachbearbeiter:in', stepId: step.id, stepTitle: step.title,
     });
     this._processes.set(ps);
