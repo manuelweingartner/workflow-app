@@ -2,7 +2,7 @@ import { Injectable, signal, computed } from '@angular/core';
 import {
   Process, ProcessStep, Dossier, ContextObject, ContextLink,
   Input, Task, CompletionCriterion, PortalMessage, PortalDocument, Note, Participant,
-  AppTab, TabType, Sitzung, GatewayType, WorkflowEvent,
+  AppTab, TabType, Sitzung, GatewayType, WorkflowEvent, AiAssessment,
 } from '../models/process.model';
 import { processToElsa } from '../elsa/process-to-elsa.adapter';
 import { translateWorkflow } from '../elsa/workflow-translator';
@@ -39,6 +39,249 @@ function buildProcessesViaElsa(sources: Process[]): Process[] {
   });
 }
 
+// ============================================================
+// Veranstaltung KI+ demo seeding
+// ------------------------------------------------------------
+// The Elsa pipeline rebuilds every instance's steps from the shared template,
+// so per-instance field values and step positioning cannot be expressed in the
+// instance source objects. We therefore seed them here, on the already-built
+// processes, right before they go into the signal. Goal: every running (and
+// freshly seeded) Veranstaltung instance sits exactly at the Risikobeurteilung
+// step (earlier steps completed, later steps pending), so the KI+ risk
+// assessment can be demonstrated end-to-end.
+// ============================================================
+
+interface VaSeed {
+  title: string;
+  veranstalter: string;
+  veranstaltung: string;
+  datum: string;
+  besucher: string;
+  startedAt: string;
+  startedBy: string;
+}
+
+const VA_INSTANCE_SEED: Record<string, VaSeed> = {
+  'inst-dossier-va': {
+    title: 'Dorffest Sommer 2025',
+    veranstalter: 'Turnverein Dorfname',
+    veranstaltung: 'Dorffest Sommer 2025',
+    datum: '21.06.2025 bis 22.06.2025',
+    besucher: "2'500",
+    startedAt: '20.02.2025',
+    startedBy: 'Frei Barbara',
+  },
+  'inst-dossier-va2': {
+    title: 'Streetparade Zürich 2025',
+    veranstalter: 'Verein Streetparade Zürich',
+    veranstaltung: 'Streetparade Zürich 2025',
+    datum: '09.08.2025',
+    besucher: "ca. 900'000",
+    startedAt: '12.02.2025',
+    startedBy: 'Hans Berger',
+  },
+};
+
+function setStepInputValue(steps: ProcessStep[], stepId: string, label: string, value: string): void {
+  const step = steps.find((s) => s.id === stepId);
+  const input = step?.inputs.find((i) => i.label === label);
+  if (input) input.value = value;
+}
+
+// Reset a step (and everything nested below it) to a fresh, not-yet-started state.
+function resetStepSubtreeToPending(step: ProcessStep): void {
+  step.status = 'pending';
+  step.completedDate = undefined;
+  step.tasks = step.tasks.map((t) => ({ ...t, status: 'open' as const, resultValue: undefined }));
+  step.completionCriteria = step.completionCriteria.map((c) => ({ ...c, met: false }));
+  step.inputs = step.inputs.map((i) => (i.type === 'document' ? { ...i, uploaded: false } : i));
+  step.parallelPaths?.forEach((path) => path.forEach(resetStepSubtreeToPending));
+  step.subSteps?.forEach(resetStepSubtreeToPending);
+  step.branches?.forEach((b) => b.steps.forEach(resetStepSubtreeToPending));
+}
+
+function seedVeranstaltungInstances(processes: Process[]): Process[] {
+  for (const p of processes) {
+    const seed = p.kind === 'instance' ? VA_INSTANCE_SEED[p.id] : undefined;
+    if (!seed) continue;
+
+    // The Elsa pipeline shares step/input/action array references between the
+    // template and all its instances (one workflow definition). Deep-clone this
+    // instance's steps before mutating, so per-instance values don't leak across.
+    p.steps = structuredClone(p.steps);
+    p.title = seed.title;
+    p.startedAt = seed.startedAt;
+    p.startedBy = seed.startedBy;
+
+    // Position the instance exactly at the Risikobeurteilung step.
+    for (const step of p.steps) {
+      if (step.id === 'va-1' || step.id === 'va-2') {
+        step.status = 'completed';
+      } else if (step.id === 'va-3') {
+        step.status = 'in-progress';
+        step.completedDate = undefined;
+        step.tasks = step.tasks.map((t) => ({ ...t, status: 'open' as const, resultValue: undefined }));
+        step.completionCriteria = step.completionCriteria.map((c) => ({ ...c, met: false }));
+      } else {
+        resetStepSubtreeToPending(step);
+      }
+    }
+
+    // The template links every step to the Dorffest Geschäft (2025-0071). Correct
+    // for the Dorffest instance but misleading elsewhere, so strip inherited
+    // context links from non-Dorffest instances.
+    if (p.id !== 'inst-dossier-va') {
+      const stripLinks = (s: ProcessStep) => {
+        s.contextLinks = [];
+        s.parallelPaths?.forEach((path) => path.forEach(stripLinks));
+        s.subSteps?.forEach(stripLinks);
+        s.branches?.forEach((b) => b.steps.forEach(stripLinks));
+      };
+      p.steps.forEach(stripLinks);
+    }
+
+    // Per-instance application data the KI+ assessment reasons about.
+    setStepInputValue(p.steps, 'va-1', 'Veranstalter', seed.veranstalter);
+    setStepInputValue(p.steps, 'va-1', 'Veranstaltung', seed.veranstaltung);
+    setStepInputValue(p.steps, 'va-1', 'Datum', seed.datum);
+    setStepInputValue(p.steps, 'va-1', 'Erwartete Besucherzahl', seed.besucher);
+    // The risk level is set by the user, deliberately not by the KI+, so start empty.
+    setStepInputValue(p.steps, 'va-3', 'Risikostufe', '');
+
+    p.events = [
+      { id: `${p.id}-ev2`, timestamp: '2025-02-22T11:00:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: seed.startedBy, stepId: 'va-2', stepTitle: 'Vollständigkeitsprüfung' },
+      { id: `${p.id}-ev1`, timestamp: '2025-02-20T09:00:00Z', type: 'started', description: `Workflow «${seed.title}» gestartet von ${seed.startedBy}`, actor: seed.startedBy },
+    ];
+  }
+  return processes;
+}
+
+// --- KI+ risk-assessment generator ----------------------------------------
+// Heuristic, deterministic stand-in for a configured KI+ assistant. Reads the
+// event name and expected attendance from the instance and produces a realistic
+// summary + detailed analysis. A village fair reads very differently from a
+// city-scale rave.
+
+function readInputValue(proc: Process, label: string): string {
+  for (const s of proc.steps) {
+    const input = s.inputs?.find((i) => i.label === label);
+    if (input?.value) return input.value;
+  }
+  return '';
+}
+
+function parseAttendance(raw: string): number {
+  const digits = raw.replace(/[^0-9]/g, '');
+  return digits ? parseInt(digits, 10) : 0;
+}
+
+export interface GeneratedAssessment {
+  recommendedLevel: string;
+  summary: string;
+  detail: string;
+}
+
+function generateRiskAssessment(proc: Process): GeneratedAssessment {
+  const name = readInputValue(proc, 'Veranstaltung') || proc.title;
+  const veranstalter = readInputValue(proc, 'Veranstalter') || 'Veranstalter unbekannt';
+  const datum = readInputValue(proc, 'Datum') || 'Datum offen';
+  const besucherRaw = readInputValue(proc, 'Erwartete Besucherzahl');
+  const besucher = parseAttendance(besucherRaw);
+  const besucherLabel = besucherRaw || 'unbekannt';
+  const lower = name.toLowerCase();
+
+  const isLargeScale =
+    /streetparade|street\s?parade|rave|technoparade|techno|festival|grossanlass/.test(lower) ||
+    besucher >= 50000;
+  const isSmall = besucher > 0 && besucher < 1000 && !isLargeScale;
+
+  const meta =
+    `<p class="ai-meta"><strong>Veranstalter:</strong> ${veranstalter} &nbsp;·&nbsp; ` +
+    `<strong>Datum:</strong> ${datum} &nbsp;·&nbsp; ` +
+    `<strong>Erwartete Besucherzahl:</strong> ${besucherLabel}</p>`;
+
+  if (isLargeScale) {
+    return {
+      recommendedLevel: 'Hoch',
+      summary:
+        `<p><strong>${name}</strong> (${veranstalter}, erwartet <strong>${besucherLabel}</strong> Besuchende, ${datum}) ist ein urbaner Grossanlass.</p>` +
+        `<p><strong>Massgebende Risiken:</strong></p>` +
+        `<ul>` +
+        `<li><strong>Crowd-Management:</strong> Gefahr von Gedränge und Panik auf engem Stadtraum</li>` +
+        `<li><strong>Sanität und Notfall:</strong> umfangreiches Konzept mit mehreren Sanitätsposten</li>` +
+        `<li><strong>Verkehr:</strong> grossflächige Strassen- und ÖV-Sperrungen</li>` +
+        `<li><strong>Lärm:</strong> erhebliche Immissionen über viele Stunden</li>` +
+        `<li><strong>Sucht- und Drogenprävention:</strong> Drug-Checking, Wasserabgabe</li>` +
+        `</ul>` +
+        `<p>Erfordert ein Grossaufgebot von Polizei und Rettungsdiensten sowie kantonale Koordination.</p>` +
+        `<p><strong>Empfohlene Risikostufe: Hoch.</strong></p>`,
+      detail:
+        meta +
+        `<h4>1. Personensicherheit / Crowd-Management</h4>` +
+        `<p>Bei sechsstelligen Besucherzahlen auf begrenztem Stadtraum besteht erhöhte Gefahr von Gedränge und Panik. Erforderlich sind:</p>` +
+        `<ul><li>Zonierung und Einbahn-Personenführung</li><li>klar definierte Flucht- und Rettungswege</li><li>Echtzeit-Dichtemonitoring</li></ul>` +
+        `<h4>2. Sanität und Notfall</h4>` +
+        `<ul><li>mehrere Sanitätsposten mit Führungsstruktur (Care-Team, Spitalkoordination)</li><li>freigehaltene Notfallachsen für Rettungsfahrzeuge</li><li>zahlreiche Einsätze zu erwarten (Kreislauf, Alkohol, Drogen)</li></ul>` +
+        `<h4>3. Verkehr und öffentlicher Raum</h4>` +
+        `<ul><li>grossflächige Strassensperrungen</li><li>Anpassung von Tram- und Buslinien, Park-and-Ride</li><li>Besucherlenkung ab Bahnhöfen, Abstimmung mit Verkehrsbetrieben und SBB</li></ul>` +
+        `<h4>4. Lärm und Immissionen</h4>` +
+        `<p>Mehrere Soundsysteme mit hohem Schalldruck über viele Stunden. Notwendig: Lärmgutachten, Pegelauflagen, Anwohnerinformation sowie Ausnahmebewilligung für die Nachtruhe.</p>` +
+        `<h4>5. Sucht- und Drogenprävention</h4>` +
+        `<p>Präventionsstände, Drug-Checking-Angebote und Wasserabgabe reduzieren die Gesundheitsrisiken spürbar.</p>` +
+        `<h4>6. Bewilligungen und Fachstellen</h4>` +
+        `<ul><li>Feuerpolizei (temporäre Bauten, Pyrotechnik)</li><li>Kantonspolizei (Sicherheit, Verkehr)</li><li>Lebensmittelkontrolle (zahlreiche Stände)</li><li>Umweltamt / Lärmschutz</li></ul>` +
+        `<p>Aufgrund der Tragweite ist eine kantonale Koordination angezeigt.</p>` +
+        `<p><strong>Gesamtbeurteilung:</strong> Aufgrund von Besucherzahl, urbaner Dichte und Lärm- bzw. Verkehrswirkung wird die Risikostufe <strong>Hoch</strong> empfohlen. Die definitive Einstufung obliegt der sachbearbeitenden Person.</p>`,
+    };
+  }
+
+  if (isSmall) {
+    return {
+      recommendedLevel: 'Tief',
+      summary:
+        `<p><strong>${name}</strong> (${veranstalter}, erwartet <strong>${besucherLabel}</strong> Besuchende, ${datum}) ist ein kleiner, lokal begrenzter Anlass.</p>` +
+        `<p><strong>Überschaubare Risiken:</strong></p>` +
+        `<ul>` +
+        `<li><strong>Festwirtschaft:</strong> Lebensmittelhygiene</li>` +
+        `<li><strong>Temporäre Baute:</strong> allenfalls ein kleines Zelt</li>` +
+        `<li><strong>Nachtruhe:</strong> moderate Musik-Lautstärke</li>` +
+        `</ul>` +
+        `<p>Mit einem einfachen Sicherheitskonzept gut beherrschbar.</p>` +
+        `<p><strong>Empfohlene Risikostufe: Tief.</strong></p>`,
+      detail:
+        meta +
+        `<h4>1. Personensicherheit</h4><p>Geringe Besucherzahl, keine besondere Gedrängegefahr. Übliche Sorgfalt genügt.</p>` +
+        `<h4>2. Festwirtschaft / Lebensmittel</h4><ul><li>Lebensmittelhygiene bei Verpflegungsständen</li><li>Kühlkette und Handhygiene</li></ul>` +
+        `<h4>3. Lärm</h4><p>Musik in moderatem Rahmen; Endzeit und Pegel mit der Anwohnerschaft abstimmen.</p>` +
+        `<h4>4. Fachstellen</h4><p>In der Regel genügen Lebensmittelkontrolle und bei temporären Bauten die Feuerpolizei.</p>` +
+        `<p><strong>Gesamtbeurteilung:</strong> Risikostufe <strong>Tief</strong> empfohlen. Die definitive Einstufung obliegt der sachbearbeitenden Person.</p>`,
+    };
+  }
+
+  // Default: a typical local/communal event (village fair, market, sports day).
+  return {
+    recommendedLevel: 'Mittel',
+    summary:
+      `<p><strong>${name}</strong> (${veranstalter}, erwartet <strong>${besucherLabel}</strong> Besuchende, ${datum}) ist ein etablierter lokaler Anlass mit familiärem Charakter.</p>` +
+      `<p><strong>Hauptrisiken:</strong></p>` +
+      `<ul>` +
+      `<li><strong>Festwirtschaft:</strong> Lebensmittelhygiene, Hitze</li>` +
+      `<li><strong>Temporäre Bauten:</strong> Festzelt und Bühne (Brandschutz, Statik)</li>` +
+      `<li><strong>Verkehr und Nachtruhe:</strong> Parkierung und Musik</li>` +
+      `</ul>` +
+      `<p>Mit einem soliden Sicherheitskonzept und den üblichen Fachstellen-Auflagen gut beherrschbar.</p>` +
+      `<p><strong>Empfohlene Risikostufe: Mittel.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Personensicherheit</h4><p>Mittlere Besucherzahl über mehrere Stunden bzw. Tage. Empfohlen sind ausreichend dimensionierte Zu- und Ausgänge sowie ein einfacher Ordnungsdienst.</p>` +
+      `<h4>2. Festwirtschaft und Lebensmittel</h4><ul><li>Lebensmittelhygiene, Kühlkette und Trinkwasser sicherstellen</li><li>bei Sommerhitze zusätzlich Wasserabgabe und Schattenplätze</li></ul>` +
+      `<h4>3. Temporäre Bauten und Brandschutz</h4><ul><li>Brandschutznachweise für Festzelt und Bühne</li><li>freie Fluchtwege und Feuerlöscher</li><li>bei Pyrotechnik gesonderte Bewilligung</li></ul>` +
+      `<h4>4. Verkehr und Nachtruhe</h4><ul><li>lokale Verkehrsführung, Parkierung und Beschilderung</li><li>Musik mit definierter Endzeit, Anwohnerinformation, allenfalls Ausnahmebewilligung Nachtruhe</li></ul>` +
+      `<h4>5. Fachstellen</h4><ul><li>Feuerpolizei (Festzelt)</li><li>Kantonspolizei (Verkehr / Sicherheit)</li><li>Lebensmittelkontrolle (Stände)</li><li>Umweltamt / Lärmschutz</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> Aufgrund von Grösse und temporären Bauten wird die Risikostufe <strong>Mittel</strong> empfohlen. Die definitive Einstufung obliegt der sachbearbeitenden Person.</p>`,
+  };
+}
+
 export interface LinkedDocument {
   input: Input;
   stepId: string;
@@ -63,7 +306,7 @@ export interface LinkedField {
 @Injectable({ providedIn: 'root' })
 export class ProcessService {
   // --- Core data ---
-  private _processes = signal<Process[]>(buildProcessesViaElsa(ALL_PROCESSES));
+  private _processes = signal<Process[]>(seedVeranstaltungInstances(buildProcessesViaElsa(ALL_PROCESSES)));
   private _contextObjects = signal<ContextObject[]>(ALL_CONTEXT_OBJECTS);
   private _dossiers = signal<Dossier[]>(ALL_DOSSIERS);
   private _sitzungen = signal<Sitzung[]>(ALL_SITZUNGEN);
@@ -817,6 +1060,125 @@ export class ProcessService {
     }
   }
 
+  // --- KI+ AI action (background assistant) ---
+
+  /** Timers for simulated background KI+ runs, keyed by `${processId}:${actionId}`. */
+  private aiTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private patchActionResult(processId: string, stepId: string, actionId: string, result: AiAssessment): void {
+    const ps = structuredClone(this._processes());
+    const proc = ps.find((p) => p.id === processId);
+    if (!proc) return;
+    const step = this.findStepInTree(proc.steps, stepId);
+    const action = step?.actions.find((a) => a.id === actionId);
+    if (!action) return;
+    action.aiResult = result;
+    this._processes.set(ps);
+  }
+
+  /** Triggers the configured KI+ assistant for an AI action. Runs "in the background"
+   *  (short delay) and writes the resulting assessment back onto the action. */
+  runAiAction(stepId: string, actionId: string): void {
+    const proc = this.activeProcess();
+    if (!proc || proc.kind !== 'instance') return;
+    const step = this.findStepInTree(proc.steps, stepId);
+    const action = step?.actions.find((a) => a.id === actionId);
+    if (!step || !action || action.type !== 'ai' || step.status !== 'in-progress') return;
+
+    const assistantName = 'KI+ Risikoanalyse Veranstaltungen';
+    this.patchActionResult(proc.id, stepId, actionId, {
+      status: 'running', assistantName, recommendedLevel: '', summary: '', detail: '',
+    });
+
+    const procId = proc.id;
+    const timerKey = `${procId}:${actionId}`;
+    const existing = this.aiTimers.get(timerKey);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.aiTimers.delete(timerKey);
+      const current = this._processes().find((p) => p.id === procId);
+      if (!current) return;
+      const a = generateRiskAssessment(current);
+      this.patchActionResult(procId, stepId, actionId, {
+        status: 'done', assistantName,
+        recommendedLevel: a.recommendedLevel, summary: a.summary, detail: a.detail,
+        generatedAt: new Date().toISOString(),
+      });
+      const ps = structuredClone(this._processes());
+      const p = ps.find((x) => x.id === procId);
+      if (p) {
+        if (!p.events) p.events = [];
+        p.events.unshift({
+          id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'note_added',
+          description: `KI+ Risikoanalyse ausgeführt, Empfehlung: ${a.recommendedLevel}`,
+          actor: assistantName, stepId, stepTitle: step.title,
+        });
+        this._processes.set(ps);
+      }
+    }, 1500);
+    this.aiTimers.set(timerKey, timer);
+  }
+
+  /** Persists an edit to the KI+ summary text (the inline editable field). */
+  updateAiSummary(stepId: string, actionId: string, text: string): void {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const ps = structuredClone(this._processes());
+    const p = ps.find((x) => x.id === proc.id);
+    const step = p ? this.findStepInTree(p.steps, stepId) : null;
+    const action = step?.actions.find((a) => a.id === actionId);
+    if (action?.aiResult) {
+      action.aiResult.summary = text;
+      this._processes.set(ps);
+    }
+  }
+
+  /** The user sets the definitive risk level (not the KI+). This closes the
+   *  Risikobeurteilung step and starts the Fachstellen-Vernehmlassung. */
+  setRiskLevelAndAdvance(stepId: string, level: string): void {
+    const proc = this.activeProcess();
+    if (!proc) return;
+    const ps = structuredClone(this._processes());
+    const p = ps.find((x) => x.id === proc.id);
+    if (!p) return;
+    const step = this.findStepInTree(p.steps, stepId);
+    if (!step || step.status !== 'in-progress') return;
+
+    const riskInput = step.inputs.find((i) => i.label === 'Risikostufe');
+    if (riskInput) riskInput.value = level;
+    step.status = 'completed';
+    step.completedDate = new Date().toLocaleDateString('de-CH');
+    step.completionCriteria = step.completionCriteria.map((c) => ({ ...c, met: true }));
+
+    // Activate the next top-level step (Fachstellen-Vernehmlassung, a parallel gateway).
+    const idx = p.steps.findIndex((s) => s.id === stepId);
+    const next = idx !== -1 ? p.steps[idx + 1] : undefined;
+    if (next && next.status === 'pending') {
+      next.status = 'in-progress';
+      // Kick off the parallel fachstellen consultations.
+      next.parallelPaths?.forEach((path) => {
+        const first = path[0];
+        if (first && first.status === 'pending') first.status = 'in-progress';
+      });
+    }
+
+    if (!p.events) p.events = [];
+    if (next) {
+      p.events.unshift({
+        id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'note_added',
+        description: `Schritt «${next.title}» gestartet`, actor: 'Sachbearbeiter:in',
+        stepId: next.id, stepTitle: next.title,
+      });
+    }
+    p.events.unshift({
+      id: crypto.randomUUID(), timestamp: new Date().toISOString(), type: 'step_completed',
+      description: `Risikostufe «${level}» gesetzt, Risikobeurteilung abgeschlossen`,
+      actor: 'Sachbearbeiter:in', stepId: step.id, stepTitle: step.title,
+    });
+    this._processes.set(ps);
+    if (next) this.selectedStepId.set(next.id);
+  }
+
   // --- Serviceanfrage / Portal methods ---
 
   addPortalMessage(text: string, isRequest: boolean) {
@@ -1541,7 +1903,8 @@ const PROCESS_VERANSTALTUNG: Process = {
       inputs: [
         { id: 'va-i1', type: 'field', label: 'Veranstalter', value: 'Turnverein Dorfname', required: true, fieldType: 'text', thematicGroup: 'Veranstalter' },
         { id: 'va-i2', type: 'field', label: 'Veranstaltung', value: 'Dorffest Sommer 2025', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
-        { id: 'va-i3', type: 'field', label: 'Datum', value: '21.06.2025 – 22.06.2025', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
+        { id: 'va-i3', type: 'field', label: 'Datum', value: '21.06.2025 bis 22.06.2025', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
+        { id: 'va-i-besucher', type: 'field', label: 'Erwartete Besucherzahl', value: "2'500", required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
       ],
       actions: [{ id: 'va-a1', label: 'Eingangsbestätigung', type: 'standard', description: 'Portal-Bestätigung' }],
       completionCriteria: [{ id: 'va-c1', description: 'Gesuch registriert', met: true }],
@@ -2024,6 +2387,14 @@ const INSTANCE_DOSSIER_VA: Process = {
   id: 'inst-dossier-va', kind: 'instance', templateId: 'proc-va',
   startedAt: '01.03.2025', startedBy: 'Maria Muster', instanceState: 'running', events: [],
 };
+// Second Veranstaltung instance: a large-scale event, so the KI+ risk
+// assessment differs markedly from the Dorffest. Per-instance field values
+// and step positioning are applied post-build in seedVeranstaltungDemo().
+const INSTANCE_DOSSIER_VA_2: Process = {
+  ...PROCESS_VERANSTALTUNG,
+  id: 'inst-dossier-va2', kind: 'instance', templateId: 'proc-va',
+  startedAt: '05.05.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+};
 const INSTANCE_DOSSIER_KESB: Process = {
   ...PROCESS_KESB,
   id: 'inst-dossier-kesb', kind: 'instance', templateId: 'proc-kesb',
@@ -2044,6 +2415,7 @@ const ALL_PROCESSES: Process[] = [
   INSTANCE_DOSSIER_EB,
   INSTANCE_DOSSIER_GR,
   INSTANCE_DOSSIER_VA,
+  INSTANCE_DOSSIER_VA_2,
   INSTANCE_DOSSIER_KESB,
 ];
 

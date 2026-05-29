@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
-import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode } from '../../models/process.model';
+import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode, AiAssessment, Input as StepInput } from '../../models/process.model';
 
 @Component({
   selector: 'app-step-detail',
@@ -364,6 +364,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
           <section class="section">
             <h3>Inputs <span class="count">{{ step.inputs.length }}</span></h3>
             @for (input of step.inputs; track input.id) {
+              @if (!hideInput(step, input)) {
               <div class="input-item">
                 @if (input.type === 'field') {
                   <div class="input-field">
@@ -396,6 +397,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   </div>
                 }
               </div>
+              }
             }
           </section>
         }
@@ -411,9 +413,64 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <span class="action-label">{{ action.label }}</span>
                   @if (action.description) { <span class="action-desc">{{ action.description }}</span> }
                 </div>
-                <button class="action-btn" [class]="action.type">Ausführen</button>
+                @if (isInstance() && action.type === 'ai' && step.status === 'in-progress') {
+                  <button class="action-btn ai" (click)="runAi(step.id, action.id)" [disabled]="action.aiResult?.status === 'running'">
+                    @if (action.aiResult?.status === 'running') {
+                      <span class="ai-spinner"></span> KI+ analysiert…
+                    } @else if (action.aiResult?.status === 'done') {
+                      Erneut ausführen
+                    } @else {
+                      Ausführen
+                    }
+                  </button>
+                } @else {
+                  <button class="action-btn" [class]="action.type">Ausführen</button>
+                }
               </div>
+
+              <!-- KI+ result card (inline, below the action that produced it) -->
+              @if (action.aiResult?.status === 'done'; as _r) {
+                <div class="ai-result">
+                  <div class="ai-result-head">
+                    <span class="ai-badge">KI+</span>
+                    <span class="ai-assistant">{{ action.aiResult!.assistantName }}</span>
+                    <span class="ai-reco" [class]="recoClass(action.aiResult!.recommendedLevel)">
+                      Empfehlung: {{ action.aiResult!.recommendedLevel }}
+                    </span>
+                  </div>
+                  <label class="ai-field-label">Einschätzung (editierbar)</label>
+                  <div class="ai-summary" contenteditable="true"
+                       [innerHTML]="action.aiResult!.summary"
+                       (blur)="onSummaryEdit(step.id, action.id, $event)"></div>
+                  <div class="ai-result-actions">
+                    <button class="ai-detail-btn" (click)="openAiDetail(action.aiResult!)">
+                      <i class="material-icons">article</i> Detailanalyse anzeigen
+                    </button>
+                    <span class="ai-hint">Vorschlag der KI+. Die definitive Risikostufe setzt die sachbearbeitende Person unten.</span>
+                  </div>
+                </div>
+              }
             }
+          </section>
+        }
+
+        <!-- Risikostufe festlegen: gated on a completed KI+ run -->
+        @if (showRiskSetter(step)) {
+          <section class="section risk-setter">
+            <h3>Risikostufe festlegen</h3>
+            <p class="risk-setter-hint">
+              Die definitive Einstufung trifft die sachbearbeitende Person. Erst mit dem Setzen der
+              Risikostufe wird die Fachstellen-Vernehmlassung gestartet.
+            </p>
+            <div class="risk-options">
+              @for (lvl of riskOptions(step); track lvl) {
+                <button class="risk-opt" [class.selected]="riskDraft() === lvl"
+                        [class]="recoClass(lvl)" (click)="riskDraft.set(lvl)">{{ lvl }}</button>
+              }
+            </div>
+            <button class="risk-confirm" [disabled]="!riskDraft()" (click)="confirmRisk(step.id)">
+              Risikostufe setzen &amp; Vernehmlassung starten
+            </button>
           </section>
         }
 
@@ -492,7 +549,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
 
         <!-- Schritt abschliessen (nur in Instanz-Modus) -->
         @if (isInstance()) {
-          @if (step.status === 'in-progress') {
+          @if (step.status === 'in-progress' && !isRiskStep(step)) {
             <div class="complete-section">
               @if (svc.canCompleteStep(step.id)) {
                 <button class="complete-btn" (click)="svc.completeStep(step.id)">
@@ -523,6 +580,25 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
         <div class="empty-icon">&#128072;</div>
         <h3>Prozessschritt auswählen</h3>
         <p>Klicke links auf einen Schritt, um die Details anzuzeigen.</p>
+      </div>
+    }
+
+    <!-- KI+ Detailanalyse-Dialog -->
+    @if (aiDetail(); as detail) {
+      <div class="ai-overlay" (click)="closeAiDetail()">
+        <div class="ai-dialog" (click)="$event.stopPropagation()">
+          <div class="ai-dialog-head">
+            <span class="ai-badge">KI+</span>
+            <h3>Detailanalyse</h3>
+            <button class="ai-dialog-close" (click)="closeAiDetail()" title="Schliessen">
+              <i class="material-icons">close</i>
+            </button>
+          </div>
+          <div class="ai-dialog-body" [innerHTML]="detail.detail"></div>
+          @if (detail.generatedAt) {
+            <div class="ai-dialog-foot">Erstellt durch {{ detail.assistantName }}</div>
+          }
+        </div>
       </div>
     }
   `,
@@ -658,8 +734,106 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
       border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap; font-family: inherit;
     }
     .action-btn:hover { background: #007ab8; }
-    .action-btn.ai { background: linear-gradient(135deg, #7c3aed, #009fe3); }
+    .action-btn.ai { background: linear-gradient(135deg, #7c3aed, #009fe3); display: inline-flex; align-items: center; gap: 6px; }
     .action-btn.ai:hover { background: linear-gradient(135deg, #6d28d9, #007ab8); }
+    .action-btn:disabled { opacity: 0.75; cursor: default; }
+    .ai-spinner {
+      width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.5);
+      border-top-color: #fff; border-radius: 50%; display: inline-block;
+      animation: ai-spin 0.7s linear infinite;
+    }
+    @keyframes ai-spin { to { transform: rotate(360deg); } }
+
+    /* KI+ result card */
+    .ai-result {
+      margin: 4px 0 14px; padding: 14px 16px; border-radius: 8px;
+      background: linear-gradient(180deg, #faf5ff, #f4f9fe);
+      border: 1px solid #e3d4f7;
+    }
+    .ai-result-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .ai-badge {
+      font-size: 11px; font-weight: 600; color: #fff; padding: 2px 8px; border-radius: 10px;
+      background: linear-gradient(135deg, #7c3aed, #009fe3); letter-spacing: 0.3px;
+    }
+    .ai-assistant { font-size: 13px; color: #586475; flex: 1; }
+    .ai-reco {
+      font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; white-space: nowrap;
+    }
+    .ai-reco.risk-low { background: #eef7ea; color: #3f971a; }
+    .ai-reco.risk-medium { background: #fdf3e2; color: #b9760a; }
+    .ai-reco.risk-high { background: #fbeaea; color: #8c0909; }
+    .ai-field-label { font-size: 12px; color: #586475; display: block; margin-bottom: 4px; }
+    .ai-summary {
+      width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #cbb6e6;
+      border-radius: 6px; font-size: 13px; font-family: inherit; line-height: 1.55; color: #353c46;
+      background: #fff; min-height: 120px;
+    }
+    .ai-summary:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 2px rgba(124,58,237,0.15); }
+    .ai-summary p { margin: 0 0 8px; }
+    .ai-summary p:last-child { margin-bottom: 0; }
+    .ai-summary ul { margin: 4px 0 10px; padding-left: 20px; }
+    .ai-summary li { margin: 2px 0; }
+    .ai-summary strong { color: #2a2f37; }
+    .ai-result-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+    .ai-detail-btn {
+      display: inline-flex; align-items: center; gap: 6px; background: #fff; color: #7c3aed;
+      border: 1px solid #cbb6e6; border-radius: 6px; padding: 6px 12px; font-size: 13px;
+      cursor: pointer; font-family: inherit;
+    }
+    .ai-detail-btn:hover { background: #f3e8ff; }
+    .ai-detail-btn .material-icons { font-size: 16px; }
+    .ai-hint { font-size: 11px; color: #6c7e93; flex: 1; min-width: 180px; }
+
+    /* Risikostufe setter */
+    .risk-setter { margin-top: 8px; }
+    .risk-setter-hint { font-size: 13px; color: #586475; margin: 0 0 12px; line-height: 1.5; }
+    .risk-options { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .risk-opt {
+      padding: 8px 18px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+      background: #fff; border: 2px solid #d4d8de; color: #586475; font-family: inherit; transition: all 0.15s;
+    }
+    .risk-opt:hover { border-color: #9aa3ae; }
+    .risk-opt.selected.risk-low { border-color: #3f971a; background: #eef7ea; color: #2f7211; }
+    .risk-opt.selected.risk-medium { border-color: #d98a0b; background: #fdf3e2; color: #92710c; }
+    .risk-opt.selected.risk-high { border-color: #8c0909; background: #fbeaea; color: #8c0909; }
+    .risk-confirm {
+      padding: 12px 18px; background: #009fe3; color: #fff; border: none; border-radius: 6px;
+      font-size: 14px; cursor: pointer; font-family: inherit;
+    }
+    .risk-confirm:hover:not(:disabled) { background: #007ab8; }
+    .risk-confirm:disabled { background: #c3ccd6; cursor: default; }
+
+    /* KI+ detail dialog */
+    .ai-overlay {
+      position: fixed; inset: 0; background: rgba(20,28,40,0.5); z-index: 1000;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .ai-dialog {
+      background: #fff; border-radius: 12px; width: min(760px, 100%); max-height: 84vh;
+      display: flex; flex-direction: column; box-shadow: 0 18px 50px rgba(0,0,0,0.3); overflow: hidden;
+    }
+    .ai-dialog-head {
+      display: flex; align-items: center; gap: 12px; padding: 18px 22px;
+      border-bottom: 1px solid #ebebed; background: linear-gradient(135deg, #faf5ff, #f4f9fe);
+    }
+    .ai-dialog-head h3 { margin: 0; flex: 1; font-size: 18px; font-weight: 500; color: #353c46; }
+    .ai-dialog-close { background: none; border: none; cursor: pointer; color: #6c7e93; padding: 2px; display: flex; }
+    .ai-dialog-close:hover { color: #353c46; }
+    .ai-dialog-body {
+      padding: 20px 22px; overflow-y: auto; font-size: 14px; line-height: 1.6; color: #353c46;
+    }
+    .ai-dialog-body h4 {
+      margin: 16px 0 6px; font-size: 14px; font-weight: 600; color: #7c3aed;
+    }
+    .ai-dialog-body h4:first-child { margin-top: 0; }
+    .ai-dialog-body p { margin: 0 0 8px; }
+    .ai-dialog-body ul { margin: 4px 0 10px; padding-left: 22px; }
+    .ai-dialog-body li { margin: 3px 0; }
+    .ai-dialog-body .ai-meta {
+      background: #f4f5f6; border-radius: 6px; padding: 10px 12px; font-size: 13px; color: #586475;
+    }
+    .ai-dialog-body strong { color: #2a2f37; }
+    .ai-dialog-foot { padding: 12px 22px; border-top: 1px solid #ebebed; font-size: 12px; color: #6c7e93; }
 
     .criterion-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid #ebebed; }
     .criterion-check-btn { background: none; border: none; cursor: pointer; padding: 0; flex-shrink: 0; margin-top: 1px; }
@@ -837,6 +1011,65 @@ export class StepDetailComponent {
   svc = inject(ProcessService);
 
   isInstance = computed(() => this.svc.activeProcess()?.kind === 'instance');
+
+  // --- KI+ risk assessment ---
+  aiDetail = signal<AiAssessment | null>(null);
+  riskDraft = signal('');
+
+  runAi(stepId: string, actionId: string) {
+    this.svc.runAiAction(stepId, actionId);
+  }
+
+  openAiDetail(result: AiAssessment) { this.aiDetail.set(result); }
+  closeAiDetail() { this.aiDetail.set(null); }
+
+  /** Persist edits made to the rich-text (contenteditable) summary on blur. */
+  onSummaryEdit(stepId: string, actionId: string, event: Event) {
+    const html = (event.target as HTMLElement).innerHTML;
+    this.svc.updateAiSummary(stepId, actionId, html);
+  }
+
+  /** The dedicated "Risikostufe" select input, if this step has one. */
+  riskInputOf(step: ProcessStep): StepInput | undefined {
+    return step.inputs.find((i) => i.label === 'Risikostufe' && i.fieldType === 'select');
+  }
+
+  isRiskStep(step: ProcessStep): boolean {
+    return !!this.riskInputOf(step);
+  }
+
+  /** While the risk step is in progress, the dedicated setter below replaces the
+   *  generic Risikostufe input, so hide the duplicate. */
+  hideInput(step: ProcessStep, input: StepInput): boolean {
+    return this.isInstance() && step.status === 'in-progress'
+      && this.isRiskStep(step) && input.label === 'Risikostufe';
+  }
+
+  riskOptions(step: ProcessStep): string[] {
+    return this.riskInputOf(step)?.options ?? [];
+  }
+
+  /** Show the user-driven risk-level setter only after the KI+ run is complete. */
+  showRiskSetter(step: ProcessStep): boolean {
+    return this.isInstance()
+      && step.status === 'in-progress'
+      && this.isRiskStep(step)
+      && step.actions.some((a) => a.type === 'ai' && a.aiResult?.status === 'done');
+  }
+
+  confirmRisk(stepId: string) {
+    if (!this.riskDraft()) return;
+    this.svc.setRiskLevelAndAdvance(stepId, this.riskDraft());
+    this.riskDraft.set('');
+  }
+
+  /** Maps a risk level to a colour class (low=green, medium=amber, high=red). */
+  recoClass(level: string): string {
+    const l = level.toLowerCase();
+    if (l.includes('hoch')) return 'risk-high';
+    if (l.includes('mittel') || l.includes('erhöht')) return 'risk-medium';
+    return 'risk-low';
+  }
 
   chooseBranch(gatewayStepId: string, branchId: string) {
     const procId = this.svc.activeProcess()?.id;

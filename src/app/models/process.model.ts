@@ -237,6 +237,18 @@ export interface Action {
   type: 'standard' | 'script' | 'ai';
   description?: string;
   script?: string;
+  // Result of a KI+ assistant run (only populated for type='ai' after execution)
+  aiResult?: AiAssessment;
+}
+
+// Result produced by a background KI+ assistant attached to an AI action.
+export interface AiAssessment {
+  status: 'idle' | 'running' | 'done';
+  assistantName: string;        // name of the configured KI+ assistant
+  recommendedLevel: string;     // KI+ recommendation (e.g. 'Tief' | 'Mittel' | 'Hoch'), advisory only
+  summary: string;              // editable short summary shown inline
+  detail: string;               // full analysis shown in a dialog
+  generatedAt?: string;         // ISO-DateTime when the run finished
 }
 
 export interface CompletionCriterion {
