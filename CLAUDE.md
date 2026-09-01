@@ -226,12 +226,45 @@ Der Demo-Pfad:
 1. **8003** «Einschulungs-Angebot an Klapp senden»: Panel mit den
    Angebotsoptionsgruppen. Danach «In Word öffnen»: 24 Registrationsbriefe, das
    Dokumentfeld gilt danach als vorhanden.
-2. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Dann
-   «Erinnerungsbriefe in Word öffnen» (18 Briefe) und «Mahnlauf simulieren»,
-   dreimal, bis die Mahnstufe erschöpft ist und ein Fall fürs Telefon bleibt.
-3. Rückwärts anschauen: **8001** zeigt den ContactSync-Lauf mit 26 bezogenen
+2. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Das Panel ist
+   hier nur Anzeige, es verweist aufs Gateway. Schritt abschliessen.
+3. **Gateway «Anmeldungen noch offen?»**: hier läuft die Schleife. «Runde
+   durchlaufen» dreimal (18, dann 11, dann 5 Briefe), danach sperrt der Knopf
+   und ein Fall bleibt fürs Telefon. «Schleife verlassen & weiter» führt auf 8006.
+4. Rückwärts anschauen: **8001** zeigt den ContactSync-Lauf mit 26 bezogenen
    Kontakten und drei Warnungen, **8002** die Datenqualität und den
    Excel-Export der Lückenliste.
+
+## Die Schleife wird am Gateway bedient
+
+**Das war eine Sackgasse und ist am 01.09.2026 behoben.** Zwei Gründe:
+
+1. `completeStep()` kennt **keine Iteration**. Es schaltet linear den nächsten
+   Schritt der obersten Ebene auf `in-progress`, ein Loop-Gateway ist für die
+   Mechanik ein Knoten wie jeder andere.
+2. Im Schrittdetail liegt der gesamte Block mit Aufgaben, Aktionen und dem Knopf
+   «Schritt abschliessen» hinter `@if (step.kind !== 'gateway')`. Ein Gateway
+   hatte damit **keinen Abschluss-Knopf**: wer dort ankam, kam nicht weiter.
+
+Jetzt rendert der Loop-Zweig in der Instanz eine eigene Steuerung: aktuelle Runde,
+offener Rest, Fortschrittsbalken, ein erklärender Satz und zwei Knöpfe.
+
+- **«Runde durchlaufen»** ist der Schleifenrumpf: erzeugt den Erinnerungsbrief
+  für genau die offenen Familien als Word-Datei und erfasst danach den Rücklauf.
+  Gesperrt, sobald kein Fall mehr offen ist oder die Mahnstufe erschöpft ist.
+- **«Schleife verlassen & weiter»** ruft `completeStep()` auf dem Gateway auf und
+  geht auf den nächsten Schritt.
+
+Der Zustand liegt bewusst **nicht** auf dem Gateway, sondern auf dem
+Sync-Lauf mit Anmeldeliste (`findKlappActionSpot`, `loopStatus`,
+`canRunLoopRound`, `runLoopRound`, `exitLoop`). Das Gateway zeigt nur die
+Aggregate, die Liste je Kind bleibt beim Monitoring-Schritt 8004. So gibt es
+genau eine Wahrheit.
+
+**Deshalb sitzen auf 8004 keine Aktionsknöpfe mehr.** Früher standen dort
+«Mahnlauf simulieren» und «Erinnerungsbriefe», also die Schleife am falschen
+Ort. Heute steht dort ein Verweis auf das Gateway. Wer die Knöpfe zurückholt,
+hat die Schleife wieder an zwei Stellen.
 
 ## Felder bewusst knapp gehalten
 
@@ -245,6 +278,7 @@ entfernt (01.09.2026, war zu überladen):
 | Fehlender zweiter Elternteil, Sorgerecht unbestätigt, Keine Mobilnummer | zu einem Feld «Datenlücken» zusammengefasst, Aufschlüsselung in der CSV |
 | Briefvorlage, Versanddatum | nicht entscheidungsrelevant |
 | Anmeldefrist auf 8004, Maximale Mahnstufe | Klapp-Panel («Frist 30.09.2026», «Mahnstufe 0 von 3») |
+| Anmeldung abgeschlossen auf 8004 | Klapp-Panel als Zähler. Es war ein **editierbares Textfeld für einen berechneten Wert**, also gleich doppelt falsch |
 | Empfänger auf 8005 | Schritttitel und Panel |
 | Zielobjekt je Kind auf 8006 | Schritttitel und Aufgaben |
 
@@ -279,6 +313,29 @@ zuerst dort nachlesen:
   Elternteil. Das ist der Grund, warum die Prüfung diese drei Punkte zählt.
 - CMI nennt das Einzelfall-Dossier im Schulumfeld **Lernendendossier**.
 
+
+## Zeilenenden: das Repo ist gemischt
+
+`core.autocrlf` ist **false** und es gibt kein `.gitattributes`, Dateien liegen
+also byteweise so im Repo, wie sie geschrieben wurden. Der Bestand ist
+grösstenteils **LF**, mit einer Ausnahme: `step-detail.component.ts` ist
+**CRLF**. Das ist so gewachsen, nicht gewollt.
+
+**Falle bei Skript-Edits (am 01.09.2026 zugeschlagen):** wer eine Datei mit
+Python liest und schreibt, kippt ungewollt die Zeilenenden, weil `open()` beim
+Lesen CRLF zu LF übersetzt und ein `newline=''` beim Schreiben dann LF
+hinausschreibt. Ergebnis war ein Diff über 3191 Zeilen für 145 echte
+Änderungen. **Beim Lesen ebenfalls `newline=''` setzen** oder binaer arbeiten:
+
+```python
+s = io.open(p, encoding='utf-8', newline='').read()      # CRLF bleibt CRLF
+io.open(p, 'w', encoding='utf-8', newline='').write(s)
+```
+
+Nach jedem Skript-Edit `git diff --stat` gegen `git diff --stat
+--ignore-all-space` halten. Klaffen die Zahlen auseinander, sind es die
+Zeilenenden. Ein `.gitattributes` würde das dauerhaft lösen, würde aber alle
+Dateien neu normalisieren und gehört darum in einen eigenen Commit.
 
 ## Wichtig
 

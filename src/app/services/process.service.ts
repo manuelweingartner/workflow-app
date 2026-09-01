@@ -1715,12 +1715,7 @@ export class ProcessService {
       this.patchSyncResult(procId, stepId, actionId, next);
       // A run does not only fill the panel: it writes its results into the step
       // and ticks off the tasks the machine actually did.
-      const writes = [...(def.writesInputs ?? [])];
-      if (next.registrations) {
-        const angemeldet = next.registrations.filter((r) => r.status === 'angemeldet').length;
-        writes.push({ label: 'Anmeldung abgeschlossen', value: `${angemeldet} von ${next.registrations.length}` });
-      }
-      this.applyActionEffects(procId, stepId, writes, def.completesTasks, undefined);
+      this.applyActionEffects(procId, stepId, def.writesInputs, def.completesTasks, undefined);
     }, 900));
   }
 
@@ -1830,6 +1825,66 @@ export class ProcessService {
     };
   }
 
+  // --- Schleifensteuerung ---------------------------------------------------
+  // Ein Loop-Gateway ist im Prototyp sonst nur gezeichnet: completeStep() kennt
+  // keine Iteration, und der Gateway-Zweig im Schrittdetail hat keinen
+  // Abschluss-Knopf. Damit war die Schleife eine Sackgasse. Diese Methoden
+  // machen sie bedienbar, und zwar dort, wo sie auch gezeichnet ist.
+  //
+  // Getrieben wird sie vom Rueckkanal des Fremdsystems: Zaehler und Mahnstufe
+  // stehen auf dem Sync-Lauf mit Anmeldeliste, nicht auf dem Gateway.
+
+  /** Stand der Schleife, gelesen vom treibenden Sync-Lauf des Prozesses. */
+  loopStatus(): { gesamt: number; offen: number; mahnstufe: number; maxMahnstufe: number } | undefined {
+    const proc = this.activeProcess();
+    if (!proc) return undefined;
+    const run = this.findKlappRun(proc);
+    if (!run?.registrations) return undefined;
+    return {
+      gesamt: run.registrations.length,
+      offen: run.registrations.filter((r) => r.status === 'offen').length,
+      mahnstufe: run.mahnstufe ?? 0,
+      maxMahnstufe: run.maxMahnstufe ?? MAHNLAUF_RUECKLAUF.length,
+    };
+  }
+
+  /** Eine weitere Runde ist nur sinnvoll, solange Faelle offen sind und die
+   *  Mahnstufe nicht erschoepft ist. Danach ist es ein Telefonat, kein Brief. */
+  canRunLoopRound(): boolean {
+    const st = this.loopStatus();
+    return !!st && st.offen > 0 && st.mahnstufe < st.maxMahnstufe;
+  }
+
+  /**
+   * Eine Schleifenrunde: Erinnerungsbrief an alle offenen Faelle erzeugen,
+   * danach den Rücklauf erfassen. Gibt die Briefdatei zurueck, den Download
+   * loest die Komponente aus.
+   */
+  runLoopRound(): { fileName: string; mime: string; content: string; empfaenger: number } | undefined {
+    const proc = this.activeProcess();
+    if (!proc) return undefined;
+    const spot = this.findKlappActionSpot(proc);
+    if (!spot) return undefined;
+    // Brief zuerst: er geht an den Stand VOR dem Ruecklauf.
+    const brief = this.buildReminderLetters();
+    this.runKlappMahnlauf(spot.stepId, spot.actionId);
+    return brief;
+  }
+
+  /** Schleife verlassen und zum naechsten Schritt weitergehen. */
+  exitLoop(gatewayStepId: string): void {
+    this.completeStep(gatewayStepId);
+  }
+
+  /** Wo der treibende Sync-Lauf haengt (Schritt- und Aktions-Id). */
+  private findKlappActionSpot(proc: Process): { stepId: string; actionId: string } | undefined {
+    for (const s of this.flattenSteps(proc.steps)) {
+      const hit = s.actions?.find((a) => a.syncResult?.registrations?.length);
+      if (hit) return { stepId: s.id, actionId: hit.id };
+    }
+    return undefined;
+  }
+
   /** The Klapp registration run of this process, wherever its step sits. */
   private findKlappRun(proc: Process): SyncRun | undefined {
     for (const s of this.flattenSteps(proc.steps)) {
@@ -1909,10 +1964,6 @@ export class ProcessService {
              + `Nächster Erinnerungsbrief möglich, Mahnstufe ${mahnstufe} von ${maxMahnstufe}.`],
     });
 
-    // Keep the step field in sync with the panel, so both never disagree.
-    this.applyActionEffects(proc.id, stepId, [
-      { label: 'Anmeldung abgeschlossen', value: `${regs.length - offen} von ${regs.length}` },
-    ]);
   }
 
   // --- KI+ AI action (background assistant) ---
@@ -3419,7 +3470,6 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
         { id: 'sei-t14', title: 'Familien ohne Klapp-Konto separat kontaktieren', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
-        { id: 'sei-i17', type: 'field', label: 'Anmeldung abgeschlossen', required: true, fieldType: 'text', thematicGroup: 'Rücklauf' },
       ],
       actions: [
         { id: 'sei-a5', label: 'Anmeldestand aus Klapp abgleichen', type: 'interface', description: 'Liest zurück, welche Familie die Schulanmeldung in Klapp abgeschlossen hat' },

@@ -16,6 +16,7 @@
 - [x] **Massenverfahren (01.09.2026)**: Schuleinschreibung als Jahrgangsverfahren, ContactSync als zeitgesteuerter Trigger, Warte-Aktivität auf Klapp, Loop mit gefülltem Rumpf, Ausleitung in die Einzelfälle
 - [x] **Dokument-Aktionen (01.09.2026)**: `DOCUMENT_ACTIONS` erzeugt echte Dateien im Browser. Serienbrief und Erinnerungsbrief öffnen in Word (.doc mit Word-HTML), Lückenliste in Excel (CSV). Keine externe Library
 - [x] **Demo-Zustand (01.09.2026)**: Schuleinschreibung steht auf Schritt 8003, 2 von 7 erledigt. Ein Lauf schreibt Feldwerte und hakt nur die Maschinenaufgaben ab, der menschliche Entscheid bleibt sichtbar offen
+- [x] **Schleife bedienbar (01.09.2026)**: Loop-Gateway hatte keinen Abschluss-Knopf und war eine Sackgasse. Jetzt Steuerung am Gateway: Runde durchlaufen (Erinnerungsbrief plus Rücklauf) und Schleife verlassen
 - [x] **Felder gestrafft (01.09.2026)**: maximal 3 Felder pro Schritt, von 24 auf 13. Was im Schnittstellen-Panel oder in einer erzeugten Datei steht, ist nicht zusätzlich Feld
 - [x] **Schnittstellen-Panel (01.09.2026)**: `Action.type = 'interface'` plus `SyncRun`, Registry `SYNC_ACTIONS`, simulierter Klapp-Rückkanal mit Anmeldestand je Kind und Mahnlauf. Kein Request verlässt den Browser
 - [x] **Testdaten-Refresh (01.09.2026)**: alle Mock-Daten auf Referenz-‚heute‘ 01.09.2026, Saison-Events in die Zukunft (Dorffest 06.2027, Streetparade 08.2027)
@@ -65,7 +66,7 @@
 - [x] Sequenzieller Kontrollfluss
 - [x] Paralleler Kontrollfluss
 - [x] Sub-Prozesse
-- [x] Schleifen mit Abbruchbedingung (visuell)
+- [x] Schleifen mit Abbruchbedingung (visuell **und bedienbar**, siehe Schuleinschreibung)
 - [x] Flowchart-orientierte Darstellung
 - [ ] Abhängigkeiten Then/Else (interaktiv)
 - [ ] Verschachtelung von Kontrollflusselementen

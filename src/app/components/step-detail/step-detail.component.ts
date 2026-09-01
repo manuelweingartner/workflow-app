@@ -250,8 +250,66 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
             </div>
             <div class="edit-row" style="margin-top:8px">
               <label>Schleifenkörper</label>
-              <span class="branch-step-count">{{ step.loopBody?.length || 0 }} Schritt(e) — im Diagramm bearbeiten</span>
+              <span class="branch-step-count">
+                @if (step.loopBody?.length) {
+                  {{ step.loopBody!.length }} Schritt(e): {{ loopBodyTitles(step) }}
+                } @else {
+                  0 Schritt(e) — im Diagramm bearbeiten
+                }
+              </span>
             </div>
+
+            <!-- Schleife durchlaufen: nur in der Instanz und nur solange das Gateway aktiv ist -->
+            @if (isInstance() && step.status === 'in-progress') {
+              @if (svc.loopStatus(); as ls) {
+                <div class="loop-run">
+                  <div class="loop-run-head">
+                    <span class="loop-round">
+                      @if (svc.canRunLoopRound()) {
+                        Nächste Runde: {{ ls.mahnstufe + 1 }} von {{ ls.maxMahnstufe }}
+                      } @else {
+                        Mahnstufe {{ ls.mahnstufe }} von {{ ls.maxMahnstufe }}
+                      }
+                    </span>
+                    <span class="loop-state">{{ ls.offen }} von {{ ls.gesamt }} noch offen</span>
+                  </div>
+                  <div class="loop-bar">
+                    <div class="loop-bar-fill" [style.width.%]="(ls.gesamt - ls.offen) / ls.gesamt * 100"></div>
+                  </div>
+                  <p class="loop-explain">
+                    @if (svc.canRunLoopRound()) {
+                      Eine Runde erzeugt den Erinnerungsbrief für die {{ ls.offen }} offenen Familien
+                      als Word-Datei und erfasst danach den Rücklauf. Die Bedingung oben wird nach
+                      jeder Runde neu geprüft.
+                    } @else if (ls.offen === 0) {
+                      Alle Anmeldungen liegen vor, die Bedingung ist nicht mehr erfüllt.
+                      Die Schleife kann verlassen werden.
+                    } @else {
+                      Mahnstufe {{ ls.maxMahnstufe }} ist erreicht. Ein weiterer Brief ist nicht
+                      vorgesehen,
+                      @if (ls.offen === 1) {
+                        der letzte Fall ist telefonisch nachzufassen.
+                      } @else {
+                        die restlichen {{ ls.offen }} Fälle sind telefonisch nachzufassen.
+                      }
+                      Die Schleife kann verlassen werden.
+                    }
+                  </p>
+                  <div class="loop-run-actions">
+                    <button class="loop-round-btn" (click)="runLoopRound()" [disabled]="!svc.canRunLoopRound()">
+                      &#8635; Runde durchlaufen
+                    </button>
+                    <button class="loop-exit-btn" (click)="svc.exitLoop(step.id)">
+                      Schleife verlassen &amp; weiter
+                    </button>
+                  </div>
+                </div>
+              }
+            } @else if (isInstance() && step.status === 'pending') {
+              <p class="loop-explain">
+                Die Schleife wird geprüft, sobald der vorherige Schritt abgeschlossen ist.
+              </p>
+            }
           </section>
         }
 
@@ -507,18 +565,12 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                             </li>
                           }
                         </ul>
-                        @if (isInstance() && step.status === 'in-progress') {
-                          <div class="sync-reg-actions">
-                            <button class="sync-brief-btn" (click)="runReminderLetters()"
-                                    [disabled]="!offeneAnmeldungen(sync)">
-                              Erinnerungsbriefe in Word öffnen
-                            </button>
-                            <button class="sync-mahn-btn" (click)="runMahnlauf(step.id, action.id)"
-                                    [disabled]="!canMahnen(sync)">
-                              Mahnlauf simulieren
-                            </button>
-                            <span class="ai-hint">{{ mahnHint(sync) }}</span>
-                          </div>
+                        @if (offeneAnmeldungen(sync); as offen) {
+                          <span class="ai-hint">
+                            @if (offen === 1) { Eine Anmeldung ist } @else { {{ offen }} Anmeldungen sind }
+                            noch offen. Das Nachfassen läuft über die Schleife
+                            «{{ loopGatewayTitle() }}» im nächsten Schritt.
+                          </span>
                         }
                       </div>
                     }
@@ -831,6 +883,28 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .action-btn.document { background: #1b5e9e; }
     .doc-btn { cursor: pointer; }
 
+    /* Schleifensteuerung am Loop-Gateway */
+    .loop-run {
+      margin-top: 12px; padding: 12px 14px; border-radius: 6px;
+      background: #fdf9f2; border: 1px solid #ecdcc0; border-left: 3px solid #f59e0b;
+    }
+    .loop-run-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+    .loop-round { font-size: 14px; color: #353c46; }
+    .loop-state { font-size: 12px; color: #92400e; margin-left: auto; }
+    .loop-bar { height: 6px; background: #f1e6d3; border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
+    .loop-bar-fill { height: 100%; background: #f59e0b; transition: width .3s ease; }
+    .loop-explain { margin: 0 0 10px; font-size: 12px; color: #6c7e93; line-height: 1.5; }
+    .loop-run-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .loop-round-btn {
+      padding: 6px 14px; background: #f59e0b; color: #3d2c05; border: none;
+      border-radius: 4px; font-size: 13px; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .loop-round-btn:disabled { background: #e2ddd4; color: #97918a; cursor: not-allowed; }
+    .loop-exit-btn {
+      padding: 6px 14px; background: white; color: #353c46; border: 1px solid #c9cfd6;
+      border-radius: 4px; font-size: 13px; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+
     /* Schnittstellen-Lauf (ContactSync, Klapp) */
     .sync-result {
       margin: 4px 0 12px; padding: 12px 14px; border-radius: 6px;
@@ -895,16 +969,6 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .sync-reg-state.ok { color: #3f971a; }
     .sync-reg-state.open { color: #92400e; }
     .sync-reg-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .sync-mahn-btn {
-      padding: 5px 12px; background: #2e7d32; color: white; border: none;
-      border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
-    }
-    .sync-mahn-btn:disabled { background: #c3cdc6; cursor: not-allowed; }
-    .sync-brief-btn {
-      padding: 5px 12px; background: #1b5e9e; color: white; border: none;
-      border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
-    }
-    .sync-brief-btn:disabled { background: #c3cdc6; cursor: not-allowed; }
     .action-info { flex: 1; display: flex; flex-direction: column; }
     .action-label { font-size: 14px; color: #353c46; }
     .action-desc { font-size: 12px; color: #6c7e93; }
@@ -1207,8 +1271,10 @@ export class StepDetailComponent {
     this.svc.runSyncAction(stepId, actionId);
   }
 
-  runMahnlauf(stepId: string, actionId: string) {
-    this.svc.runKlappMahnlauf(stepId, actionId);
+  /** Title of the loop gateway, so the monitoring step can point at it. */
+  loopGatewayTitle(): string {
+    const gw = this.svc.steps().find((s) => s.kind === 'gateway' && s.gatewayType === 'loop');
+    return gw?.title ?? 'Schleife';
   }
 
   // --- Dokument-Aktionen: echte Datei erzeugen und dem Browser übergeben ---
@@ -1218,10 +1284,14 @@ export class StepDetailComponent {
     if (doc) this.download(doc.fileName, doc.mime, doc.content);
   }
 
-  /** Reminder letters for exactly the families that are still open. */
-  runReminderLetters() {
-    const doc = this.svc.buildReminderLetters();
+  /** One loop round: the reminder letter goes out, then the response is recorded. */
+  runLoopRound() {
+    const doc = this.svc.runLoopRound();
     if (doc) this.download(doc.fileName, doc.mime, doc.content);
+  }
+
+  loopBodyTitles(step: ProcessStep): string {
+    return (step.loopBody ?? []).map((s) => s.title).join(', ');
   }
 
   offeneAnmeldungen(sync: SyncRun): number {
@@ -1268,25 +1338,6 @@ export class StepDetailComponent {
     return (regs.filter((r) => r.status === 'angemeldet').length / regs.length) * 100;
   }
 
-  /** A further reminder letter only makes sense while cases are open and the
-   *  Mahnstufe is not exhausted. Beyond that it is a phone call, not a letter. */
-  canMahnen(sync: SyncRun): boolean {
-    const offen = (sync.registrations ?? []).filter((r) => r.status === 'offen').length;
-    return offen > 0 && (sync.mahnstufe ?? 0) < (sync.maxMahnstufe ?? 0);
-  }
-
-  mahnHint(sync: SyncRun): string {
-    const offen = (sync.registrations ?? []).filter((r) => r.status === 'offen').length;
-    if (offen === 0) return 'Alle Anmeldungen liegen vor, die Schleife ist verlassen.';
-    const stufe = sync.mahnstufe ?? 0;
-    const max = sync.maxMahnstufe ?? 0;
-    if (stufe >= max) {
-      const faelle = offen === 1 ? 'Der letzte Fall ist' : `Die letzten ${offen} Fälle sind`;
-      return `Mahnstufe ${max} erreicht. ${faelle} telefonisch nachzufassen.`;
-    }
-    const familien = offen === 1 ? 'eine Familie' : `${offen} Familien`;
-    return `Schleifenrumpf: Brief an ${familien}, danach Mahnstufe ${stufe + 1} von ${max}.`;
-  }
 
   openAiDetail(result: AiAssessment) { this.aiDetail.set(result); }
   closeAiDetail() { this.aiDetail.set(null); }
