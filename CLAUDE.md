@@ -218,20 +218,38 @@ Excel beim Encoding.
 
 ## Demo-Zustand der Schuleinschreibung
 
-**Die Instanz startet bei Schritt 1**, nichts ist vorbelegt: keine erledigten
-Schritte, keine Laufergebnisse, leere Ergebnisfelder. Wer die Demo führt, klickt
-sich von 8001 durch und sieht bei jedem Schritt, was die Automation übernimmt.
+**Die Instanz steht auf Schritt 8003**, also 2 von 7 Schritten erledigt. 8001 und
+8002 sind abgeschlossen und zeigen ihre Ergebnisse, darunter den historischen
+ContactSync-Lauf im Panel. Ab 8003 klickt man vorwärts.
 
-Ein Durchlauf sieht so aus:
-1. **8001** «ContactSync-Lauf auslösen»: Panel erscheint, 24 Kinder, drei
-   Warnungen. Die Felder Datenquelle, Selektions-ID und Bezogene Kinder füllen
-   sich von selbst.
-2. **8002** «In Excel öffnen» lädt die Lückenliste und hakt die Nacherfassung
-   ab. Die drei Prüfaufgaben bleiben für den Menschen.
-3. **8003** «Einschulungs-Angebot an Klapp senden», danach «In Word öffnen»:
-   24 Registrationsbriefe. Das Dokumentfeld gilt danach als vorhanden.
-4. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Dann
-   «Mahnlauf simulieren», dreimal, bis die Mahnstufe erschöpft ist.
+Der Demo-Pfad:
+1. **8003** «Einschulungs-Angebot an Klapp senden»: Panel mit den
+   Angebotsoptionsgruppen. Danach «In Word öffnen»: 24 Registrationsbriefe, das
+   Dokumentfeld gilt danach als vorhanden.
+2. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Dann
+   «Erinnerungsbriefe in Word öffnen» (18 Briefe) und «Mahnlauf simulieren»,
+   dreimal, bis die Mahnstufe erschöpft ist und ein Fall fürs Telefon bleibt.
+3. Rückwärts anschauen: **8001** zeigt den ContactSync-Lauf mit 26 bezogenen
+   Kontakten und drei Warnungen, **8002** die Datenqualität und den
+   Excel-Export der Lückenliste.
+
+## Felder bewusst knapp gehalten
+
+**Maximal drei Felder pro Schritt.** Was der Schnittstellen-Panel oder eine
+erzeugte Datei ohnehin zeigt, steht nicht zusätzlich als Feld da. Konkret
+entfernt (01.09.2026, war zu überladen):
+
+| entfernt | steht stattdessen in |
+|---|---|
+| Datenquelle, Selektions-ID | Konfigurationsblock des ContactSync-Panels |
+| Fehlender zweiter Elternteil, Sorgerecht unbestätigt, Keine Mobilnummer | zu einem Feld «Datenlücken» zusammengefasst, Aufschlüsselung in der CSV |
+| Briefvorlage, Versanddatum | nicht entscheidungsrelevant |
+| Anmeldefrist auf 8004, Maximale Mahnstufe | Klapp-Panel («Frist 30.09.2026», «Mahnstufe 0 von 3») |
+| Empfänger auf 8005 | Schritttitel und Panel |
+| Zielobjekt je Kind auf 8006 | Schritttitel und Aufgaben |
+
+Wer Felder ergänzt: erst prüfen, ob der Wert nicht schon im Panel steht. Doppelt
+geführte Werte laufen auseinander, sobald einer davon berechnet wird.
 
 **Achtung bei Aufgaben:** ein Klick auf eine Aufgabe schaltet
 `offen -> in Arbeit -> erledigt`, es braucht also **zwei** Klicks bis erledigt.

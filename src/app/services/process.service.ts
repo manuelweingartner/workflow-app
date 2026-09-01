@@ -720,8 +720,6 @@ const SYNC_ACTIONS: Record<string, SyncActionDef> = {
     build: contactSyncRun,
     writesInputs: [
       { label: 'Bezogene Kinder', value: '24' },
-      { label: 'Datenquelle', value: 'Innosolv EWK über CMI ContactSync' },
-      { label: 'Selektions-ID', value: 'SEL-4711' },
     ],
     // Der geplante Task und der Bezug sind Maschinenarbeit. Das Abgrenzen des
     // Jahrgangs (sei-t3) bleibt bei der Schulverwaltung.
@@ -3339,57 +3337,53 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
   processOwner: { name: 'Meier Sandra', role: 'Leiterin Schulverwaltung', email: 's.meier@schule-dorf.ch' },
   steps: [
     {
-      id: 'sei-1', number: '8001', title: 'Jahrgang aus ContactSync beziehen', status: 'in-progress', dueDate: '05.09.2026',
+      id: 'sei-1', number: '8001', title: 'Jahrgang aus ContactSync beziehen', status: 'completed', completedDate: '24.08.2026',
       kind: 'step', stepType: 'activity', activityKind: 'interface',
       responsible: 'Geplanter Task (ContactSync)', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t1', title: 'Geplanten Task auslösen', assignee: 'System', status: 'open' },
-        { id: 'sei-t2', title: 'Kinder inkl. Beziehungen und Haushalte beziehen', assignee: 'System', status: 'open' },
-        { id: 'sei-t3', title: 'Jahrgang 2027/28 abgrenzen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t1', title: 'Geplanten Task auslösen', assignee: 'System', status: 'done' },
+        { id: 'sei-t2', title: 'Kinder inkl. Beziehungen und Haushalte beziehen', assignee: 'System', status: 'done' },
+        { id: 'sei-t3', title: 'Jahrgang 2027/28 abgrenzen', assignee: 'Meier Sandra', status: 'done' },
       ],
       inputs: [
         { id: 'sei-i1', type: 'field', label: 'Schuljahr', value: '2027/28', required: true, fieldType: 'text', thematicGroup: 'Jahrgang' },
         { id: 'sei-i2', type: 'field', label: 'Stufe', value: 'Kindergarten', required: true, fieldType: 'select', options: ['Kindergarten', '1. Primarklasse', 'Oberstufe'], thematicGroup: 'Jahrgang' },
-        { id: 'sei-i3', type: 'field', label: 'Bezogene Kinder', required: true, fieldType: 'number', thematicGroup: 'Jahrgang' },
-        { id: 'sei-i4', type: 'field', label: 'Datenquelle', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
-        { id: 'sei-i5', type: 'field', label: 'Selektions-ID', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
+        { id: 'sei-i3', type: 'field', label: 'Bezogene Kinder', value: '24', required: true, fieldType: 'number', thematicGroup: 'Jahrgang' },
       ],
       actions: [
-        { id: 'sei-a1', label: 'ContactSync-Lauf auslösen', type: 'interface', description: 'Bezieht die Schulkinder des Jahrgangs samt Eltern und Haushalt aus der Einwohnerkontrolle' },
+        { id: 'sei-a1', label: 'ContactSync-Lauf auslösen', type: 'interface', description: 'Bezieht die Schulkinder des Jahrgangs samt Eltern und Haushalt aus der Einwohnerkontrolle', syncResult: contactSyncRun() },
       ],
-      completionCriteria: [{ id: 'sei-c1', description: 'Jahrgang vollständig bezogen und abgegrenzt', met: false }],
+      completionCriteria: [{ id: 'sei-c1', description: 'Jahrgang vollständig bezogen und abgegrenzt', met: true }],
       conditionals: [],
     },
     {
-      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'pending',
+      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'completed', completedDate: '27.08.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t4', title: 'Beziehungen auf beide Elternteile prüfen', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'sei-t5', title: 'Sorgerecht plausibilisieren', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen (Mobilnummer)', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t4', title: 'Beziehungen auf beide Elternteile prüfen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t5', title: 'Sorgerecht plausibilisieren', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen (Mobilnummer)', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'done' },
       ],
       inputs: [
         { id: 'sei-i6', type: 'field', label: 'Vollständige Datensätze', value: '18 von 24', required: true, fieldType: 'text', thematicGroup: 'Datenqualität' },
-        { id: 'sei-i7', type: 'field', label: 'Fehlender zweiter Elternteil', value: '3', required: true, fieldType: 'number', thematicGroup: 'Datenqualität' },
-        { id: 'sei-i8', type: 'field', label: 'Sorgerecht unbestätigt', value: '2', required: true, fieldType: 'number', thematicGroup: 'Datenqualität' },
-        { id: 'sei-i9', type: 'field', label: 'Keine Mobilnummer für Klapp', value: '3', required: true, fieldType: 'number', thematicGroup: 'Datenqualität' },
+        { id: 'sei-i7', type: 'field', label: 'Datenlücken', value: '6', required: true, fieldType: 'number', thematicGroup: 'Datenqualität' },
         { id: 'sei-i10', type: 'field', label: 'Einschreibung trotz Lücken starten', value: 'Ja, Lücken werden parallel bereinigt', required: true, fieldType: 'select', options: ['Ja, Lücken werden parallel bereinigt', 'Nein, zuerst bereinigen'], thematicGroup: 'Entscheid' },
       ],
       actions: [
         { id: 'sei-a2', label: 'Lückenliste exportieren', type: 'script', description: 'Erstellt die Liste der unvollständigen Datensätze für die Einwohnerkontrolle, öffnet in Excel' },
       ],
       completionCriteria: [
-        { id: 'sei-c2', description: 'Datenqualität geprüft', met: false },
-        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: false },
+        { id: 'sei-c2', description: 'Datenqualität geprüft', met: true },
+        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: true },
       ],
       conditionals: [{ id: 'sei-co1', condition: 'Sorgerecht unbestätigt > 0', thenAction: 'Belegdokument bei den Erziehungsberechtigten einfordern, Anmeldung nur durch sorgeberechtigten Elternteil zulassen' }],
     },
     {
-      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'pending',
+      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'in-progress', dueDate: '08.09.2026',
       kind: 'step', stepType: 'activity', activityKind: 'document',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
@@ -3400,9 +3394,7 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
         { id: 'sei-t11', title: 'Couvertierung und Postversand', assignee: 'Sekretariat Schulverwaltung', status: 'open' },
       ],
       inputs: [
-        { id: 'sei-i11', type: 'field', label: 'Briefvorlage', value: 'Registrationsbrief Kindergarten (Klapp)', required: true, fieldType: 'text', thematicGroup: 'Versand' },
         { id: 'sei-i12', type: 'field', label: 'Anzahl Briefe', value: '24', required: true, fieldType: 'number', thematicGroup: 'Versand' },
-        { id: 'sei-i13', type: 'field', label: 'Versanddatum', value: '31.08.2026', required: true, fieldType: 'date', thematicGroup: 'Versand' },
         { id: 'sei-i14', type: 'field', label: 'Anmeldefrist', value: '30.09.2026', required: true, fieldType: 'date', thematicGroup: 'Versand' },
         { id: 'sei-i15', type: 'document', label: 'Serienbrief (Druckstapel)', required: true, documentName: 'Registrationsbriefe_KG_2027-28.doc', uploaded: false },
       ],
@@ -3427,9 +3419,7 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
         { id: 'sei-t14', title: 'Familien ohne Klapp-Konto separat kontaktieren', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
-        { id: 'sei-i16', type: 'field', label: 'Anmeldefrist', value: '30.09.2026', required: true, fieldType: 'date', thematicGroup: 'Rücklauf' },
         { id: 'sei-i17', type: 'field', label: 'Anmeldung abgeschlossen', required: true, fieldType: 'text', thematicGroup: 'Rücklauf' },
-        { id: 'sei-i18', type: 'field', label: 'Maximale Mahnstufe', value: '3', required: true, fieldType: 'number', thematicGroup: 'Rücklauf' },
       ],
       actions: [
         { id: 'sei-a5', label: 'Anmeldestand aus Klapp abgleichen', type: 'interface', description: 'Liest zurück, welche Familie die Schulanmeldung in Klapp abgeschlossen hat' },
@@ -3455,7 +3445,6 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
             { id: 'sei-t17', title: 'Mahnstufe erhöhen', assignee: 'System', status: 'open' },
           ],
           inputs: [
-            { id: 'sei-i19', type: 'field', label: 'Empfänger', value: 'nur Familien mit offener Anmeldung', required: true, fieldType: 'text', thematicGroup: 'Mahnlauf' },
             { id: 'sei-i20', type: 'document', label: 'Erinnerungsbrief (Druckstapel)', required: true, uploaded: false },
           ],
           actions: [
@@ -3481,7 +3470,6 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
       inputs: [
         { id: 'sei-i21', type: 'field', label: 'Zu eröffnende Lernendendossiers', value: '24', required: true, fieldType: 'number', thematicGroup: 'Ausleitung' },
         { id: 'sei-i22', type: 'field', label: 'Davon mit abweichendem Antrag', value: '2', required: false, fieldType: 'number', thematicGroup: 'Ausleitung' },
-        { id: 'sei-i23', type: 'field', label: 'Zielobjekt je Kind', value: 'Lernendendossier', required: true, fieldType: 'text', thematicGroup: 'Ausleitung' },
       ],
       actions: [
         { id: 'sei-a7', label: 'Lernendendossiers anlegen', type: 'script', description: 'Legt je Kind ein Lernendendossier an und übernimmt Stammdaten, Beziehungen und Anmeldedaten' },
@@ -3699,8 +3687,10 @@ const INSTANCE_DOSSIER_SP: Process = {
 const INSTANCE_DOSSIER_SEI: Process = {
   ...PROCESS_SCHULEINSCHREIBUNG,
   id: 'inst-dossier-sei', kind: 'instance', templateId: 'proc-sei',
-  startedAt: '01.09.2026', startedBy: 'Meier Sandra', instanceState: 'running', events: [
-    { id: 'sei-e1', timestamp: '2026-09-01T08:00:00Z', type: 'started', description: 'Workflow «Schuleinschreibung Kindergarten 2027/28» gestartet von Meier Sandra', actor: 'Meier Sandra' },
+  startedAt: '24.08.2026', startedBy: 'Geplanter Task (ContactSync)', instanceState: 'running', events: [
+    { id: 'sei-e3', timestamp: '2026-08-27T10:15:00Z', type: 'step_completed', description: 'Schritt «Datenqualität prüfen» abgeschlossen', actor: 'Meier Sandra', stepId: 'sei-2', stepTitle: 'Datenqualität prüfen' },
+    { id: 'sei-e2', timestamp: '2026-08-24T02:56:00Z', type: 'step_completed', description: 'Schritt «Jahrgang aus ContactSync beziehen» abgeschlossen, 24 Kinder im Jahrgang 2027/28', actor: 'Meier Sandra', stepId: 'sei-1', stepTitle: 'Jahrgang aus ContactSync beziehen' },
+    { id: 'sei-e1', timestamp: '2026-08-24T02:15:00Z', type: 'started', description: 'Workflow «Schuleinschreibung Kindergarten 2027/28» durch den geplanten ContactSync-Task gestartet', actor: 'Geplanter Task (ContactSync)' },
   ],
 };
 
@@ -4013,9 +4003,10 @@ const DOSSIER_SCHULSTART: Dossier = {
   id: '9', number: '2026-0101', title: 'Schulstart 2027/28: Einschreibung Kindergarten',
   processId: 'inst-dossier-sei',
   notes: [
-    { id: 'sei-n1', date: '01.09.2026 07:45', author: 'Meier Sandra', subject: 'Jahrgang 2027/28 eröffnet', text: 'Sammelgeschäft für die Einschreibung des Kindergarten-Jahrgangs 2027/28 eröffnet. Der ContactSync-Lauf gegen die Innosolv-EWK ist ausgelöst, danach folgen Datenqualitätsprüfung und Registrationsbriefe. Ziel: Anmeldefrist 30.09.2026.', visibility: 'intern' },
-    { id: 'sei-n2', date: '01.09.2026 07:50', author: 'Vogt Daniel', subject: 'Hinweis Sorgerecht', text: 'Beim Sorgerecht nicht auf den EWK-Wert abstützen. Dort steht oft «ja», ohne dass es belegt ist. Wir brauchen das Belegdokument, sonst ist die Anmeldung angreifbar.', visibility: 'intern' },
-    { id: 'sei-n3', date: '01.09.2026 07:55', author: 'Meier Sandra', text: 'Familien ohne Klapp-Konto brauchen einen separaten Weg. Letztes Jahr waren es drei, die Anmeldung haben wir dort persönlich aufgenommen.', visibility: 'intern' }
+    { id: 'sei-n1', date: '24.08.2026 06:30', author: 'System (ContactSync)', subject: 'ContactSync-Lauf vom 24.08.2026', text: '26 neue Kontakte aus der Innosolv-EWK bezogen, 24 davon im Kindergarten-Jahrgang 2027/28. Beziehungen und Haushalte wurden mitsynchronisiert. Der Lauf lief 41 Minuten und meldet drei Warnungen.', visibility: 'intern' },
+    { id: 'sei-n2', date: '27.08.2026 10:15', author: 'Meier Sandra', subject: 'Datenqualität geprüft', text: '18 von 24 Datensätzen sind vollständig. Die sechs Lücken betreffen drei Kinder ohne zweiten Elternteil, zwei mit unbestätigtem Sorgerecht und drei Familien ohne Mobilnummer für Klapp. Die Lückenliste ist an die Einwohnerkontrolle gegangen, die Einschreibung startet parallel.', visibility: 'intern' },
+    { id: 'sei-n3', date: '27.08.2026 10:30', author: 'Vogt Daniel', subject: 'Hinweis Sorgerecht', text: 'Beim Sorgerecht nicht auf den EWK-Wert abstützen. Dort steht oft «ja», ohne dass es belegt ist. Wir brauchen das Belegdokument, sonst ist die Anmeldung angreifbar.', visibility: 'intern' },
+    { id: 'sei-n4', date: '01.09.2026 08:00', author: 'Meier Sandra', text: 'Nächster Schritt: Angebot in Klapp publizieren und die Registrationsbriefe drucken. Die drei Familien ohne Klapp-Konto brauchen einen separaten Weg, letztes Jahr haben wir die Anmeldung dort persönlich aufgenommen.', visibility: 'intern' }
   ],
   participants: [
     { id: 'sei-p1', role: 'Leiterin Schulverwaltung', roleType: 'internal', name: 'Meier Sandra', organization: 'Schulverwaltung Dorfname', email: 's.meier@schule-dorf.ch', phone: '044 222 33 44', since: '24.08.2026' },

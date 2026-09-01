@@ -15,7 +15,8 @@
 - [x] **Schulverwaltung (01.09.2026)**: zwei Bildungsprozesse mit laufender Instanz, beide traktandiert in der Bildungskommission BK-2026-05
 - [x] **Massenverfahren (01.09.2026)**: Schuleinschreibung als Jahrgangsverfahren, ContactSync als zeitgesteuerter Trigger, Warte-Aktivität auf Klapp, Loop mit gefülltem Rumpf, Ausleitung in die Einzelfälle
 - [x] **Dokument-Aktionen (01.09.2026)**: `DOCUMENT_ACTIONS` erzeugt echte Dateien im Browser. Serienbrief und Erinnerungsbrief öffnen in Word (.doc mit Word-HTML), Lückenliste in Excel (CSV). Keine externe Library
-- [x] **Demo-Zustand (01.09.2026)**: Schuleinschreibung startet bei Schritt 1, nichts vorbelegt. Ein Lauf schreibt Feldwerte und hakt nur die Maschinenaufgaben ab, der menschliche Entscheid bleibt sichtbar offen
+- [x] **Demo-Zustand (01.09.2026)**: Schuleinschreibung steht auf Schritt 8003, 2 von 7 erledigt. Ein Lauf schreibt Feldwerte und hakt nur die Maschinenaufgaben ab, der menschliche Entscheid bleibt sichtbar offen
+- [x] **Felder gestrafft (01.09.2026)**: maximal 3 Felder pro Schritt, von 24 auf 13. Was im Schnittstellen-Panel oder in einer erzeugten Datei steht, ist nicht zusätzlich Feld
 - [x] **Schnittstellen-Panel (01.09.2026)**: `Action.type = 'interface'` plus `SyncRun`, Registry `SYNC_ACTIONS`, simulierter Klapp-Rückkanal mit Anmeldestand je Kind und Mahnlauf. Kein Request verlässt den Browser
 - [x] **Testdaten-Refresh (01.09.2026)**: alle Mock-Daten auf Referenz-‚heute‘ 01.09.2026, Saison-Events in die Zukunft (Dorffest 06.2027, Streetparade 08.2027)
 - [x] **Kontextobjekte**: Geschäft + Sitzung, Querverknüpfungen, klickbar → öffnet Tab
