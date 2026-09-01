@@ -231,7 +231,9 @@ function buildParallel(step: ProcessStep, ctx: BuildContext): BuiltFragment {
 }
 
 function buildLoop(step: ProcessStep, ctx: BuildContext): BuiltFragment {
-  const sv: SimpleViewActivityMeta = { number: step.number, title: step.title };
+  const sv: SimpleViewActivityMeta = {
+    number: step.number, title: step.title, loopCondition: step.loopCondition,
+  };
 
   const loopActivity: ElsaActivity = {
     id: step.id,

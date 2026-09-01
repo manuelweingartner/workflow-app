@@ -276,6 +276,12 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <div class="loop-bar">
                     <div class="loop-bar-fill" [style.width.%]="(ls.gesamt - ls.offen) / ls.gesamt * 100"></div>
                   </div>
+                  @if (!svc.hasSyncRun()) {
+                    <p class="loop-explain loop-hint">
+                      Der Anmeldestand wurde noch nicht abgeglichen. Die erste Runde holt ihn
+                      automatisch von Klapp, der Stand oben ist der Ausgangswert.
+                    </p>
+                  }
                   <p class="loop-explain">
                     @if (svc.canRunLoopRound()) {
                       Eine Runde erzeugt den Erinnerungsbrief für die {{ ls.offen }} offenen Familien
@@ -894,6 +900,7 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .loop-bar { height: 6px; background: #f1e6d3; border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
     .loop-bar-fill { height: 100%; background: #f59e0b; transition: width .3s ease; }
     .loop-explain { margin: 0 0 10px; font-size: 12px; color: #6c7e93; line-height: 1.5; }
+    .loop-explain.loop-hint { color: #92400e; }
     .loop-run-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .loop-round-btn {
       padding: 6px 14px; background: #f59e0b; color: #3d2c05; border: none;

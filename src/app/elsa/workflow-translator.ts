@@ -281,7 +281,9 @@ function buildLoopGateway(
     status: 'pending',
     gatewayType: 'loop',
     loopBody,
-    loopCondition: sv.title,
+    // Vorher stand hier sv.title: die Bedingung ging beim Roundtrip verloren
+    // und im Schrittdetail erschien der Titel als Bedingung.
+    loopCondition: sv.loopCondition ?? node.metadata?.displayText ?? sv.title,
     responsible: sv.responsible ?? '',
     category: sv.category ?? '',
     contextLinks: sv.contextLinks ?? [],

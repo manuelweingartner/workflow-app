@@ -266,6 +266,29 @@ genau eine Wahrheit.
 Ort. Heute steht dort ein Verweis auf das Gateway. Wer die Knöpfe zurückholt,
 hat die Schleife wieder an zwei Stellen.
 
+### Zwei Fallen, die dabei zugeschlagen haben (01.09.2026)
+
+**1. `loopCondition` ging beim Elsa-Roundtrip verloren.** Der Adapter schrieb die
+Bedingung nur nach `metadata.displayText`, und `buildLoopGateway()` im Translator
+setzte `loopCondition: sv.title`. Im Schrittdetail stand darum der **Titel** als
+Bedingung («Anmeldungen noch offen?» statt «Offene Anmeldungen > 0 und Mahnstufe
+< 3»). Betraf jede Schleife, auch die im Baugesuch. Behoben: `loopCondition`
+reist jetzt in der `simpleView` mit, der Translator liest
+`sv.loopCondition ?? node.metadata?.displayText ?? sv.title`.
+
+**2. Die Steuerung verschwand still, wenn der Abgleich nie lief.** `loopStatus()`
+gab `undefined` zurueck, solange kein Sync-Lauf mit Anmeldeliste existierte, und
+das Template rendert dann nichts. Da `canCompleteStep()` Schritte mit
+`stepType: 'activity'` ohne Bedingung durchlaesst, kann man 8004 abschliessen,
+**ohne** «Abgleich ausloesen» geklickt zu haben. Genau dann war das Gateway wieder
+eine Sackgasse. Behoben: `loopStatus()` liefert im Zweifel den Ausgangsstand
+(seiteneffektfrei, es wird aus dem Template gerufen), `runLoopRound()` zieht den
+Lauf per `ensureKlappRun()` nach, und ein Hinweis sagt es.
+
+**Merke:** ein Getter, den das Template aufruft, darf keinen Zustand anlegen. Und
+eine Steuerung, die bei fehlenden Daten einfach nicht rendert, ist von einem
+Fehler nicht zu unterscheiden. Lieber rendern und erklaeren.
+
 ## Felder bewusst knapp gehalten
 
 **Maximal drei Felder pro Schritt.** Was der Schnittstellen-Panel oder eine

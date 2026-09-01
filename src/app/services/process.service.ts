@@ -1834,18 +1834,33 @@ export class ProcessService {
   // Getrieben wird sie vom Rueckkanal des Fremdsystems: Zaehler und Mahnstufe
   // stehen auf dem Sync-Lauf mit Anmeldeliste, nicht auf dem Gateway.
 
-  /** Stand der Schleife, gelesen vom treibenden Sync-Lauf des Prozesses. */
-  loopStatus(): { gesamt: number; offen: number; mahnstufe: number; maxMahnstufe: number } | undefined {
+  /**
+   * Stand der Schleife, gelesen vom treibenden Sync-Lauf des Prozesses.
+   *
+   * Wenn der Abgleich noch nie ausgeloest wurde, gibt es keinen Lauf und damit
+   * keine Anmeldeliste. Fruehere Fassung lieferte dann `undefined`, worauf die
+   * Steuerung im Template still verschwand: das Gateway war wieder eine
+   * Sackgasse, sobald der Monitoring-Schritt ohne Klick abgeschlossen wurde.
+   * Darum hier der Ausgangsstand als Rueckfallebene. Diese Methode wird aus dem
+   * Template gerufen und bleibt deshalb frei von Seiteneffekten, das Anlegen
+   * passiert erst in `runLoopRound()`.
+   */
+  loopStatus(): { gesamt: number; offen: number; mahnstufe: number; maxMahnstufe: number } {
     const proc = this.activeProcess();
-    if (!proc) return undefined;
-    const run = this.findKlappRun(proc);
-    if (!run?.registrations) return undefined;
+    const run = proc ? this.findKlappRun(proc) : undefined;
+    const regs = run?.registrations ?? klappRegistrationList();
     return {
-      gesamt: run.registrations.length,
-      offen: run.registrations.filter((r) => r.status === 'offen').length,
-      mahnstufe: run.mahnstufe ?? 0,
-      maxMahnstufe: run.maxMahnstufe ?? MAHNLAUF_RUECKLAUF.length,
+      gesamt: regs.length,
+      offen: regs.filter((r) => r.status === 'offen').length,
+      mahnstufe: run?.mahnstufe ?? 0,
+      maxMahnstufe: run?.maxMahnstufe ?? MAHNLAUF_RUECKLAUF.length,
     };
+  }
+
+  /** Ob der Rueckkanal ueberhaupt schon einmal abgeglichen wurde. */
+  hasSyncRun(): boolean {
+    const proc = this.activeProcess();
+    return !!proc && !!this.findKlappRun(proc);
   }
 
   /** Eine weitere Runde ist nur sinnvoll, solange Faelle offen sind und die
@@ -1863,12 +1878,38 @@ export class ProcessService {
   runLoopRound(): { fileName: string; mime: string; content: string; empfaenger: number } | undefined {
     const proc = this.activeProcess();
     if (!proc) return undefined;
-    const spot = this.findKlappActionSpot(proc);
+    // Wurde der Abgleich nie ausgeloest, gibt es noch keinen Lauf. Dann hier
+    // nachziehen, sonst haette die Schleife nichts, worauf sie rechnen kann.
+    const spot = this.ensureKlappRun();
     if (!spot) return undefined;
     // Brief zuerst: er geht an den Stand VOR dem Ruecklauf.
     const brief = this.buildReminderLetters();
     this.runKlappMahnlauf(spot.stepId, spot.actionId);
     return brief;
+  }
+
+  /**
+   * Stellt sicher, dass der treibende Sync-Lauf existiert, und liefert seinen Ort.
+   * Legt ihn im Bedarfsfall auf der registrierten Rueckkanal-Aktion an.
+   */
+  private ensureKlappRun(): { stepId: string; actionId: string } | undefined {
+    const proc = this.activeProcess();
+    if (!proc) return undefined;
+    const vorhanden = this.findKlappActionSpot(proc);
+    if (vorhanden) return vorhanden;
+
+    // Die Aktion suchen, die laut Registry den Rueckkanal fuehrt.
+    for (const s of this.flattenSteps(proc.steps)) {
+      const action = s.actions?.find((a) => {
+        const def = SYNC_ACTIONS[a.id];
+        return def && !!def.build().registrations?.length;
+      });
+      if (action) {
+        this.patchSyncResult(proc.id, s.id, action.id, SYNC_ACTIONS[action.id].build());
+        return { stepId: s.id, actionId: action.id };
+      }
+    }
+    return undefined;
   }
 
   /** Schleife verlassen und zum naechsten Schritt weitergehen. */

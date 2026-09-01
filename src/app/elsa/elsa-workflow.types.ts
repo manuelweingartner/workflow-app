@@ -88,6 +88,10 @@ export interface SimpleViewActivityMeta {
   dueDate?: string;
   collapsed?: boolean;
 
+  // While (Loop-Gateway): die Abbruchbedingung. Muss hier mitreisen,
+  // metadata.displayText allein geht beim Roundtrip verloren.
+  loopCondition?: string;
+
   // TaskActivity
   taskMode?: TaskMode;
   tasks?: Task[];
