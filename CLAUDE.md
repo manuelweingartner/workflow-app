@@ -105,7 +105,7 @@ src/app/
 
 ## Mock-Daten
 
-8 Prozesse + Dossiers mit Kontrollfluss:
+9 Prozesse + Dossiers mit Kontrollfluss:
 1. **Baugesuch** (11 Schritte): Subprocess (Öff. Auflage), Parallel (3 Fachberichte), Decision (Bewilligt/Auflagen/Abgelehnt), Loop (Rohbaukontrolle)
 2. **Akteneinsicht** (7 Schritte)
 3. **Einbürgerung** (9 Schritte): Parallel (Sprache+Integration), Decision (Empfohlen/Nicht/Zurückgestellt), Schritt 6 → Sitzung GV-2027-06
@@ -114,12 +114,15 @@ src/app/
 6. **KESB** (9 Schritte): Subprocess (Abklärung: 4 Teilschritte), Decision (4 Massnahme-Optionen), Schritt 6 → Sitzung KESB-2026-16
 7. **Schuleintritt** (9 Knoten, Schulverwaltung): Parallel (Schulreifeabklärung: Kindergarten, SPD, Schularzt), Subprocess (Standortgespräch: 3 Teilschritte), Decision (Regeleintritt/Rückstellung/vorzeitiger Eintritt), Schritt 6006 → Sitzung BK-2026-05
 8. **Sonderpädagogik** (12 Knoten, Schulverwaltung): Subprocess (Schulische Abklärung: 4 Teilschritte), Parallel (SPD, Logopädie, KJPD), Decision (4 Massnahme-Optionen), Loop (jährliche Überprüfung), Schritt 7007 → Sitzung BK-2026-05
+9. **Schuleinschreibung** (9 Knoten, Schulverwaltung): **Jahrgangs- bzw. Massenverfahren**, läuft nicht pro Fall sondern einmal pro Schuljahr über einen ganzen Jahrgang. Schnittstelle als zeitgesteuerter Trigger (ContactSync), Warte-Aktivität auf ein Fremdsystem (Klapp), Loop mit **gefülltem** Rumpf (Mahnlauf, endet an der Mahnstufe), Schritt 8006 leitet die Einzelfälle ins Schuleintrittsverfahren aus. Traktandiert in BK-2026-05.
 
 4 Sitzungen:
 - GR-2026-10: Gemeinderatssitzung 15.10.2026 (5 Traktanden, 2 mit Geschäfts-Verknüpfung)
 - BK-2026-05: Bildungskommission 21.10.2026 (6 Traktanden, Schuleintritt Ademi + Sonderpädagogik Bucher)
 - KESB-2026-16: KESB-Spruchkörpersitzung 17.11.2026 (3 Traktanden, Gefahrenmeldung Schneider)
 - GV-2027-06: Gemeindeversammlung 18.06.2027 (4 Traktanden, Einbürgerung Rossi)
+
+(Die Bildungskommission hat seit 01.09.2026 sieben Traktanden: Nr. 6 ist der Zwischenbericht zur Einschreibung, Verschiedenes ist Nr. 7.)
 
 ### Zeitachse der Mock-Daten
 
@@ -139,6 +142,64 @@ liegt weiter zurück als die übrigen Geschäfte, die beiden Elsa-Instanzen
 Datumsangaben ändert, muss die `startedAt` der Instanzen und die
 `completedDate` des jeweils ersten Schritts zusammenhalten, sonst startet eine
 Instanz nach ihrem ersten erledigten Schritt.
+
+## Zwei Kardinalitäten, nicht vermischen
+
+Die Prozesse 1 bis 8 sind **Einzelfallverfahren**: eine Instanz, ein Fall, ein Kind.
+Prozess 9 (Schuleinschreibung) ist ein **Massenverfahren**: eine Instanz, ein
+ganzer Jahrgang. Das ist eine bewusste Trennung, keine Inkonsistenz.
+
+**Die beiden nicht in einen Prozess mischen.** Eine Instanz zeigt einen
+Fortschrittsbalken und einen aktuellen Schritt. Ein gemischter Prozess würde
+zuerst «24 Kinder importiert» und danach «Verfügung für Ademi Elira» anzeigen,
+was schlicht falsch wäre. Der Übergang passiert stattdessen explizit in Schritt
+8006 «Einzelfälle eröffnen», das je Kind ein Lernendendossier anlegt und dort das
+Schuleintrittsverfahren startet.
+
+## Schnittstellen-Simulation (ContactSync, Klapp)
+
+`Action.type` kennt neben `standard | script | ai` auch **`interface`**. Solche
+Aktionen tragen ein `syncResult: SyncRun` und werden im Schrittdetail als Panel
+gerendert (Endpunkt, Konfiguration, Zähler, Warnungen, optional der Anmeldestand
+je Kind). Registriert werden sie in **`SYNC_ACTIONS`** in `process.service.ts`,
+analog zu `ASSESSMENT_ACTIONS` für die KI+-Aktionen. Eine `interface`-Aktion ohne
+Registry-Eintrag behält den einfachen Knopf.
+
+**Es verlässt kein Request den Browser.** Alle Läufe sind deterministisch erzeugt,
+damit eine Demo wiederholbar ist. Kein `Math.random()`, kein `new Date()`: das
+Referenzdatum steht in `SYNC_POLL_DATE`, der Rücklauf pro Mahnstufe in
+`MAHNLAUF_RUECKLAUF` (7 / 6 / 4 von 18 offenen Fällen, der letzte Fall bleibt
+bewusst offen und muss telefonisch nachgefasst werden).
+
+Zwei Methoden im Service:
+- `runSyncAction()` läuft die Schnittstelle neu. Beim Klapp-Rückkanal ist das
+  **nicht destruktiv**: die Liste je Kind bleibt, höchstens eine weitere Familie
+  meldet sich an. Andere Schnittstellen werden aus dem Builder neu gebaut.
+- `runKlappMahnlauf()` ist der Schleifenrumpf: Brief an alle Offenen, danach
+  meldet sich ein deterministischer Anteil an. Begrenzt durch `maxMahnstufe`.
+
+### Fachliche Quellen (Confluence, Stand 01.09.2026)
+
+Die Endpunkte und Feldnamen sind **echt**, nicht erfunden. Wer sie ändert, sollte
+zuerst dort nachlesen:
+- **Schuleinschreibung via Klapp** (DOK, Seite 5506531331): Einschulung wird bei
+  Klapp als **Angebot mit Angebotsoptionsgruppen** abgebildet. Endpunkte
+  `/process/klapp/OfferRequest/OfferList/{mainCategory}/{studentGuid}`,
+  `/offerDetail/{offerGuid}`, `POST /register`, `PUT|DELETE /request/{guid}`.
+  Harte Einschränkung: Daten gehen nur zu Klapp, **solange die Aufgabe im Status
+  «Erfasst» steht**. Mehrfachauswahl unterstützt Klapp nicht.
+- **Einführung ContactSync mit Beziehungen und Haushalten** (DOK, Seite
+  5354192911): ab ContactSync 5 und CMI R26 synchronisiert ein **Geplanter Task**
+  Schulkinder samt Familiensituation aus der Innosolv-EWK. Endpunkt
+  **`FindSchulkinder`**, gesteuert über eine **Selektions-ID** (Altersbereich,
+  Gebiete, Gruppenkriterien). Eltern kommen über **Beziehungen** mit, Wohnsituation
+  über **Haushalte**, Kinder tragen `OptionenFremdsystem = INCLUDE_RELATIONS`.
+- Die Datenlücken in Schritt 8002 sind die realen: **das Sorgerecht in der EWK ist
+  oft nicht aktuell** (die Stellen setzen gern ein «ja» ohne Beleg), und es gibt
+  einen Report für **fehlende Mütter bzw. Väter**, also Kinder ohne zweiten
+  Elternteil. Das ist der Grund, warum die Prüfung diese drei Punkte zählt.
+- CMI nennt das Einzelfall-Dossier im Schulumfeld **Lernendendossier**.
+
 
 ## Wichtig
 

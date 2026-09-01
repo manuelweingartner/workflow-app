@@ -10,9 +10,11 @@
 - [x] **Dashboard**: Startseite wenn alle Tabs geschlossen (Meine Prozesse, Geschäfte, Sitzungen, Stats)
 - [x] **Tab-System**: Multi-Typ-Tabs in App-Bar (Prozess/Geschäft/Sitzung mit eigenem Icon)
 - [x] **Tab-Picker**: + Button öffnet Dropdown zum Öffnen neuer Tabs
-- [x] **8 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB, Schuleintritt, Sonderpädagogik
+- [x] **9 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB, Schuleintritt, Sonderpädagogik, Schuleinschreibung
 - [x] **4 Demo-Sitzungen**: Gemeinderatssitzung, Bildungskommission, KESB-Spruchkörpersitzung, Gemeindeversammlung
 - [x] **Schulverwaltung (01.09.2026)**: zwei Bildungsprozesse mit laufender Instanz, beide traktandiert in der Bildungskommission BK-2026-05
+- [x] **Massenverfahren (01.09.2026)**: Schuleinschreibung als Jahrgangsverfahren, ContactSync als zeitgesteuerter Trigger, Warte-Aktivität auf Klapp, Loop mit gefülltem Rumpf, Ausleitung in die Einzelfälle
+- [x] **Schnittstellen-Panel (01.09.2026)**: `Action.type = 'interface'` plus `SyncRun`, Registry `SYNC_ACTIONS`, simulierter Klapp-Rückkanal mit Anmeldestand je Kind und Mahnlauf. Kein Request verlässt den Browser
 - [x] **Testdaten-Refresh (01.09.2026)**: alle Mock-Daten auf Referenz-‚heute‘ 01.09.2026, Saison-Events in die Zukunft (Dorffest 06.2027, Streetparade 08.2027)
 - [x] **Kontextobjekte**: Geschäft + Sitzung, Querverknüpfungen, klickbar → öffnet Tab
 - [x] **Prozess-View**: Eigene Sidebar (Prozessübersicht, Alle Aufgaben, Alle Dokumente)
@@ -39,6 +41,7 @@
 | Akteneinsicht | — | — | — | — |
 | Schuleintritt | Einschulung (3 Pfade) | Schulreife (Kindergarten, SPD, Schularzt) | Standortgespräch (3 Schritte) | — |
 | Sonderpädagogik | Massnahme (4 Pfade) | SPD, Logopädie, KJPD | Schulische Abklärung (4 Schritte) | jährliche Überprüfung |
+| Schuleinschreibung | — | — | — | Mahnlauf (gefüllter Rumpf, endet an Mahnstufe 3) |
 
 ---
 
@@ -64,7 +67,7 @@
 - [x] Flowchart-orientierte Darstellung
 - [ ] Abhängigkeiten Then/Else (interaktiv)
 - [ ] Verschachtelung von Kontrollflusselementen
-- [ ] Warte-Aktivität (Zeitpunkt, Timer, Ereignis)
+- [x] Warte-Aktivität (Zeitpunkt, Timer, Ereignis) — Schritt 8004 wartet auf den Klapp-Rücklauf bis zur Frist
 - [ ] Zusammenführungs-Schritt nach parallelen Pfaden
 
 ---
@@ -80,9 +83,9 @@
 
 ### 2. Trigger und Startmechanismen
 - [ ] Manuelle Auslösung durch Benutzer:in im Geschäft
-- [ ] Start aus Objektaktionen heraus (CWS, Schnittstellen, API)
+- [x] Start aus Objektaktionen heraus (CWS, Schnittstellen, API) — ContactSync-Task startet die Instanz, Schritt 8006 startet die Einzelverfahren
 - [ ] Ereignisbasierte Trigger
-- [ ] Zeitbasierte Trigger
+- [x] Zeitbasierte Trigger — geplanter ContactSync-Task, täglich 02:15
 - [ ] Externe Trigger über API oder Events
 - [ ] Kombination mehrerer Triggerbedingungen
 

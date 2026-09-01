@@ -234,11 +234,41 @@ export interface Input {
 export interface Action {
   id: string;
   label: string;
-  type: 'standard' | 'script' | 'ai';
+  type: 'standard' | 'script' | 'ai' | 'interface';
   description?: string;
   script?: string;
   // Result of a KI+ assistant run (only populated for type='ai' after execution)
   aiResult?: AiAssessment;
+  // Result of an external-system interface run (only for type='interface')
+  syncResult?: SyncRun;
+}
+
+// One run of an interface to an external system (ContactSync to the EWK, Klapp).
+// Simulated in this prototype: no request leaves the browser.
+export interface SyncRun {
+  status: 'idle' | 'running' | 'done';
+  systemName: string;              // 'CMI ContactSync', 'Klapp'
+  direction: string;               // 'CMI <- Innosolv EWK'
+  endpoint: string;                // 'FindSchulkinder', 'POST /process/klapp/OfferRequest/register'
+  config?: { label: string; value: string }[];   // Selektions-ID, Provider, Mandant
+  lastRun?: string;                // 'TT.MM.JJJJ HH:MM'
+  outcome: 'ok' | 'warnung' | 'fehler';
+  metrics: { label: string; value: string }[];
+  warnings: string[];
+
+  // Klapp registration channel: per-child state behind the counters.
+  registrations?: KlappRegistration[];
+  deadline?: string;               // Anmeldefrist, 'TT.MM.JJJJ'
+  mahnstufe?: number;
+  maxMahnstufe?: number;
+}
+
+// Registration state of one child in Klapp, as reported back to CMI.
+export interface KlappRegistration {
+  name: string;
+  status: 'angemeldet' | 'offen';
+  registeredAt?: string;           // 'TT.MM.JJJJ' when status='angemeldet'
+  reminders: number;               // how many Registrationsbriefe went out
 }
 
 // Result produced by a background KI+ assistant attached to an AI action.

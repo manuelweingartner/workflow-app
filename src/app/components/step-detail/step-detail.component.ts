@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
-import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode, AiAssessment, Input as StepInput } from '../../models/process.model';
+import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKind, TaskMode, AiAssessment, SyncRun, Input as StepInput } from '../../models/process.model';
 
 @Component({
   selector: 'app-step-detail',
@@ -422,10 +422,98 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                       Ausführen
                     }
                   </button>
+                } @else if (isInstance() && action.type === 'interface' && svc.isSyncAction(action.id) && step.status === 'in-progress') {
+                  <button class="action-btn interface" (click)="runSync(step.id, action.id)" [disabled]="action.syncResult?.status === 'running'">
+                    @if (action.syncResult?.status === 'running') {
+                      <span class="ai-spinner"></span> Abgleich läuft…
+                    } @else {
+                      Abgleich simulieren
+                    }
+                  </button>
                 } @else {
                   <button class="action-btn" [class]="action.type">Ausführen</button>
                 }
               </div>
+
+              <!-- Schnittstellen-Lauf: Konfiguration, Zähler, Warnungen, Rückkanal -->
+              @if (action.syncResult; as sync) {
+                @if (sync.status !== 'running') {
+                  <div class="sync-result" [class]="sync.outcome">
+                    <div class="sync-head">
+                      <span class="sync-badge">Schnittstelle</span>
+                      <span class="sync-system">{{ sync.systemName }}</span>
+                      <span class="sync-direction">{{ sync.direction }}</span>
+                      <span class="sync-outcome" [class]="sync.outcome">{{ syncOutcomeLabel(sync.outcome) }}</span>
+                    </div>
+                    <div class="sync-endpoint"><code>{{ sync.endpoint }}</code></div>
+
+                    @if (sync.config?.length) {
+                      <dl class="sync-config">
+                        @for (c of sync.config; track c.label) {
+                          <dt>{{ c.label }}</dt><dd>{{ c.value }}</dd>
+                        }
+                      </dl>
+                    }
+
+                    <div class="sync-metrics">
+                      @for (m of sync.metrics; track m.label) {
+                        <div class="sync-metric">
+                          <span class="sync-metric-value">{{ m.value }}</span>
+                          <span class="sync-metric-label">{{ m.label }}</span>
+                        </div>
+                      }
+                    </div>
+                    @if (sync.lastRun) {
+                      <p class="sync-lastrun">Letzter Lauf: {{ sync.lastRun }}</p>
+                    }
+
+                    @if (sync.warnings.length) {
+                      <!-- track by index: the warning texts are rebuilt on every run -->
+                      <ul class="sync-warnings">
+                        @for (w of sync.warnings; track $index) { <li>{{ w }}</li> }
+                      </ul>
+                    }
+
+                    <!-- Rückkanal: Anmeldestand je Kind -->
+                    @if (sync.registrations?.length) {
+                      <div class="sync-reg">
+                        <div class="sync-reg-head">
+                          <span>Anmeldestand je Kind</span>
+                          @if (sync.deadline) { <span class="sync-reg-deadline">Frist {{ sync.deadline }}</span> }
+                        </div>
+                        <div class="sync-bar">
+                          <div class="sync-bar-fill" [style.width.%]="syncRegPercent(sync)"></div>
+                        </div>
+                        <ul class="sync-reg-list">
+                          @for (r of sync.registrations; track r.name) {
+                            <li [class]="r.status">
+                              <span class="sync-reg-name">{{ r.name }}</span>
+                              @if (r.status === 'angemeldet') {
+                                <span class="sync-reg-state ok">angemeldet {{ r.registeredAt }}</span>
+                              } @else {
+                                <span class="sync-reg-state open">
+                                  offen@if (r.reminders) { , {{ r.reminders }}. Erinnerung }
+                                </span>
+                              }
+                            </li>
+                          }
+                        </ul>
+                        @if (isInstance() && step.status === 'in-progress') {
+                          <div class="sync-reg-actions">
+                            <button class="sync-mahn-btn" (click)="runMahnlauf(step.id, action.id)"
+                                    [disabled]="!canMahnen(sync)">
+                              Mahnlauf simulieren
+                            </button>
+                            <span class="ai-hint">{{ mahnHint(sync) }}</span>
+                          </div>
+                        }
+                      </div>
+                    }
+
+                    <span class="ai-hint">Simulierter Lauf. Es verlässt kein Request den Browser.</span>
+                  </div>
+                }
+              }
 
               <!-- KI+ result card (inline, below the action that produced it) -->
               @if (action.aiResult?.status === 'done'; as _r) {
@@ -725,6 +813,78 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .action-type-badge.standard { background: #e6f4fd; color: #009fe3; }
     .action-type-badge.script { background: #f3e8ff; color: #7c3aed; }
     .action-type-badge.ai { background: linear-gradient(135deg, #f3e8ff, #e6f4fd); color: #7c3aed; }
+    .action-type-badge.interface { background: #e8f5e9; color: #2e7d32; }
+    .action-btn.interface { background: #2e7d32; }
+
+    /* Schnittstellen-Lauf (ContactSync, Klapp) */
+    .sync-result {
+      margin: 4px 0 12px; padding: 12px 14px; border-radius: 6px;
+      background: #f7faf8; border: 1px solid #d9e6dc; border-left: 3px solid #2e7d32;
+    }
+    .sync-result.warnung { border-left-color: #f59e0b; }
+    .sync-result.fehler { border-left-color: #8c0909; }
+    .sync-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .sync-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+      background: #e8f5e9; color: #2e7d32; white-space: nowrap;
+    }
+    .sync-system { font-size: 14px; color: #353c46; font-weight: 500; }
+    .sync-direction { font-size: 12px; color: #6c7e93; }
+    .sync-outcome { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: auto; white-space: nowrap; }
+    .sync-outcome.ok { background: #e8f5e9; color: #2e7d32; }
+    .sync-outcome.warnung { background: #fef3c7; color: #92400e; }
+    .sync-outcome.fehler { background: #fde8e8; color: #8c0909; }
+    .sync-endpoint { margin-bottom: 8px; }
+    .sync-endpoint code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px; color: #353c46; background: #eef3ef; padding: 2px 6px; border-radius: 3px;
+      word-break: break-all;
+    }
+    .sync-config {
+      display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+      margin: 0 0 10px; font-size: 12px;
+    }
+    .sync-config dt { color: #6c7e93; }
+    .sync-config dd { margin: 0; color: #353c46; }
+    .sync-metrics { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .sync-metric {
+      display: flex; flex-direction: column; min-width: 96px; padding: 6px 10px;
+      background: white; border: 1px solid #e3e9e5; border-radius: 4px;
+    }
+    .sync-metric-value { font-size: 16px; color: #353c46; }
+    .sync-metric-label { font-size: 11px; color: #6c7e93; }
+    .sync-lastrun { margin: 0 0 8px; font-size: 12px; color: #6c7e93; }
+    .sync-warnings { margin: 0 0 10px; padding-left: 18px; }
+    .sync-warnings li { font-size: 12px; color: #92400e; margin-bottom: 3px; }
+
+    /* Rückkanal: Anmeldestand je Kind */
+    .sync-reg {
+      margin-bottom: 10px; padding: 10px; background: white;
+      border: 1px solid #e3e9e5; border-radius: 4px;
+    }
+    .sync-reg-head {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
+      font-size: 13px; color: #353c46;
+    }
+    .sync-reg-deadline { font-size: 11px; color: #6c7e93; margin-left: auto; }
+    .sync-bar { height: 6px; background: #eef3ef; border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+    .sync-bar-fill { height: 100%; background: #3f971a; transition: width .3s ease; }
+    .sync-reg-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 220px; overflow-y: auto; }
+    .sync-reg-list li {
+      display: flex; gap: 8px; align-items: baseline; padding: 3px 0;
+      border-bottom: 1px solid #f1f4f2; font-size: 12px;
+    }
+    .sync-reg-list li:last-child { border-bottom: none; }
+    .sync-reg-name { color: #353c46; flex: 1; }
+    .sync-reg-state { white-space: nowrap; }
+    .sync-reg-state.ok { color: #3f971a; }
+    .sync-reg-state.open { color: #92400e; }
+    .sync-reg-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .sync-mahn-btn {
+      padding: 5px 12px; background: #2e7d32; color: white; border: none;
+      border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .sync-mahn-btn:disabled { background: #c3cdc6; cursor: not-allowed; }
     .action-info { flex: 1; display: flex; flex-direction: column; }
     .action-label { font-size: 14px; color: #353c46; }
     .action-desc { font-size: 12px; color: #6c7e93; }
@@ -1021,6 +1181,47 @@ export class StepDetailComponent {
     this.svc.runAiAction(stepId, actionId);
   }
 
+  // --- Schnittstellen-Aktionen (simuliert) ---
+
+  runSync(stepId: string, actionId: string) {
+    this.svc.runSyncAction(stepId, actionId);
+  }
+
+  runMahnlauf(stepId: string, actionId: string) {
+    this.svc.runKlappMahnlauf(stepId, actionId);
+  }
+
+  syncOutcomeLabel(outcome: string) {
+    return { ok: 'OK', warnung: 'mit Warnungen', fehler: 'Fehler' }[outcome] ?? outcome;
+  }
+
+  /** Share of the cohort that has completed its registration. */
+  syncRegPercent(sync: SyncRun): number {
+    const regs = sync.registrations ?? [];
+    if (!regs.length) return 0;
+    return (regs.filter((r) => r.status === 'angemeldet').length / regs.length) * 100;
+  }
+
+  /** A further reminder letter only makes sense while cases are open and the
+   *  Mahnstufe is not exhausted. Beyond that it is a phone call, not a letter. */
+  canMahnen(sync: SyncRun): boolean {
+    const offen = (sync.registrations ?? []).filter((r) => r.status === 'offen').length;
+    return offen > 0 && (sync.mahnstufe ?? 0) < (sync.maxMahnstufe ?? 0);
+  }
+
+  mahnHint(sync: SyncRun): string {
+    const offen = (sync.registrations ?? []).filter((r) => r.status === 'offen').length;
+    if (offen === 0) return 'Alle Anmeldungen liegen vor, die Schleife ist verlassen.';
+    const stufe = sync.mahnstufe ?? 0;
+    const max = sync.maxMahnstufe ?? 0;
+    if (stufe >= max) {
+      const faelle = offen === 1 ? 'Der letzte Fall ist' : `Die letzten ${offen} Fälle sind`;
+      return `Mahnstufe ${max} erreicht. ${faelle} telefonisch nachzufassen.`;
+    }
+    const familien = offen === 1 ? 'eine Familie' : `${offen} Familien`;
+    return `Schleifenrumpf: Brief an ${familien}, danach Mahnstufe ${stufe + 1} von ${max}.`;
+  }
+
   openAiDetail(result: AiAssessment) { this.aiDetail.set(result); }
   closeAiDetail() { this.aiDetail.set(null); }
 
@@ -1163,7 +1364,7 @@ export class StepDetailComponent {
   }
 
   actionTypeLabel(type: string) {
-    return { standard: 'Standard', script: 'Skript', ai: 'KI+' }[type] ?? type;
+    return { standard: 'Standard', script: 'Skript', ai: 'KI+', interface: 'Schnittstelle' }[type] ?? type;
   }
 
   openContext(ctx: ContextObject) {
