@@ -100,11 +100,6 @@ const DEMO_INSTANCE_SEEDS: DemoInstanceSeed[] = [
     instanceId: 'inst-dossier-ae', assessmentStepId: 'ae-2', decisionLabels: ['Berechtigungsstatus'],
     startedAt: '10.08.2026', startedBy: 'Weber Claudia',
   },
-  // Schuleintritt: KI+ Einschulungs-Screening.
-  {
-    instanceId: 'inst-dossier-se', assessmentStepId: 'se-2', decisionLabels: ['Einschulungsempfehlung'],
-    startedAt: '03.08.2026', startedBy: 'Meier Sandra',
-  },
   // Sonderpädagogik: KI+ Förderbedarf-Screening.
   {
     instanceId: 'inst-dossier-sp', assessmentStepId: 'sp-2', decisionLabels: ['Empfohlene Massnahmenstufe'],
@@ -125,6 +120,8 @@ function resetStepSubtreeToPending(step: ProcessStep): void {
   step.tasks = step.tasks.map((t) => ({ ...t, status: 'open' as const, resultValue: undefined }));
   step.completionCriteria = step.completionCriteria.map((c) => ({ ...c, met: false }));
   step.inputs = step.inputs.map((i) => (i.type === 'document' ? { ...i, uploaded: false } : i));
+  // A step that has not run yet carries no run results either.
+  step.actions = step.actions.map((a) => ({ ...a, aiResult: undefined, syncResult: undefined }));
   step.parallelPaths?.forEach((path) => path.forEach(resetStepSubtreeToPending));
   step.subSteps?.forEach(resetStepSubtreeToPending);
   step.branches?.forEach((b) => b.steps.forEach(resetStepSubtreeToPending));
@@ -466,58 +463,6 @@ function generateDatenschutzCheck(proc: Process): GeneratedAssessment {
   };
 }
 
-// --- KI+ Einschulungs-Screening ------------------------------------------
-// Beurteilt Stichtag, Elternantrag und die Hinweise aus dem Kindergarten und
-// schlägt eine Einschulungsvariante vor. Der Entscheid bleibt bei der
-// Bildungskommission.
-function generateEinschulungAssessment(proc: Process): GeneratedAssessment {
-  const kind = readInputValue(proc, 'Kind') || 'Kind unbekannt';
-  const geburt = readInputValue(proc, 'Geburtsdatum') || 'unbekannt';
-  const antrag = readInputValue(proc, 'Antrag der Eltern') || 'Regeleintritt';
-  const schulkreis = readInputValue(proc, 'Schulkreis (Wohnadresse)') || 'nicht zugeteilt';
-  const jahr = readInputValue(proc, 'Eintritt per Schuljahr') || 'folgendes Schuljahr';
-
-  const rueckstellung = /rückstellung/i.test(antrag);
-  const vorzeitig = /vorzeitig/i.test(antrag);
-
-  let empfehlung = 'Regeleintritt';
-  let begruendung = 'Der Stichtag ist erfüllt und es liegen keine Hinweise auf einen abweichenden Entwicklungsstand vor.';
-  let abklaerung = 'Keine vertiefte Abklärung nötig.';
-  if (rueckstellung) {
-    empfehlung = 'Vertiefte Abklärung nötig';
-    begruendung = 'Die Eltern beantragen eine Rückstellung, obwohl der Stichtag erfüllt ist. Eine Rückstellung ist eine Abweichung vom Regelfall und braucht eine fachliche Grundlage.';
-    abklaerung = 'Schulpsychologische Abklärung und schulärztliche Untersuchung einholen, Beurteilung der Kindergartenlehrperson beiziehen.';
-  } else if (vorzeitig) {
-    empfehlung = 'Vertiefte Abklärung nötig';
-    begruendung = 'Ein vorzeitiger Eintritt liegt vor dem Stichtag und ist nur bei nachgewiesener Schulreife möglich.';
-    abklaerung = 'Schulpsychologische Abklärung zur Schulreife einholen, Einschätzung des Kindergartens beiziehen.';
-  }
-
-  const meta = `<p class="ai-meta"><strong>Kind:</strong> ${kind} &nbsp;·&nbsp; <strong>Geburtsdatum:</strong> ${geburt} &nbsp;·&nbsp; <strong>Schulkreis:</strong> ${schulkreis}</p>`;
-  return {
-    recommendedLevel: empfehlung,
-    summary:
-      `<p>Schuleintritt <strong>${kind}</strong> per Schuljahr ${jahr}, Antrag der Eltern: <strong>${antrag}</strong>.</p>` +
-      `<p>${begruendung}</p>` +
-      `<ul>` +
-      `<li><strong>Vorschlag:</strong> ${empfehlung}</li>` +
-      `<li><strong>Nächster Schritt:</strong> ${abklaerung}</li>` +
-      `</ul>` +
-      `<p><strong>Empfehlung: ${empfehlung}.</strong></p>`,
-    detail:
-      meta +
-      `<h4>1. Formelle Prüfung</h4><ul>` +
-      `<li>Stichtag: massgebend ist der 31.07. des Eintrittsjahres</li>` +
-      `<li>Schulkreis: ${schulkreis}, Zuteilung nach Wohnadresse</li>` +
-      `<li>Antrag der Eltern: ${antrag}</li></ul>` +
-      `<h4>2. Materielle Beurteilung</h4><p>${begruendung}</p>` +
-      `<h4>3. Empfohlenes Vorgehen</h4><ul><li>${abklaerung}</li>` +
-      `<li>Standortgespräch mit den Eltern führen, bevor der Antrag an die Kommission geht</li>` +
-      `<li>bei Abweichung vom Elternantrag Rechtsmittelbelehrung in die Verfügung aufnehmen</li></ul>` +
-      `<p><strong>Gesamtbeurteilung:</strong> <strong>${empfehlung}</strong>. Der Entscheid obliegt der Bildungskommission, diese Beurteilung ist eine Entscheidgrundlage.</p>`,
-  };
-}
-
 // --- KI+ Förderbedarf-Screening -------------------------------------------
 // Liest den beobachteten Förderbedarf und die Vorgeschichte und schlägt eine
 // Massnahmenstufe samt zuständiger Fachstelle vor.
@@ -602,7 +547,6 @@ const ASSESSMENT_ACTIONS: Record<string, AssessmentConfig> = {
   'gr-a2': { assistantName: 'KI+ Ressort-Triage', decisionLabel: 'Zuständiges Ressort', generate: generateTriageAssessment },
   'kes-a2': { assistantName: 'KI+ Gefährdungs-Screening', decisionLabel: 'Dringlichkeitsstufe', generate: generateKesbScreening },
   'ae-a2': { assistantName: 'KI+ Datenschutz-Check', decisionLabel: 'Berechtigungsstatus', generate: generateDatenschutzCheck },
-  'se-a2': { assistantName: 'KI+ Einschulungs-Screening', decisionLabel: 'Einschulungsempfehlung', generate: generateEinschulungAssessment },
   'sp-a2': { assistantName: 'KI+ Förderbedarf-Screening', decisionLabel: 'Empfohlene Massnahmenstufe', generate: generateSonderpaedAssessment },
 };
 
@@ -760,12 +704,176 @@ function klappRegistrationRun(): SyncRun {
   };
 }
 
-// Registry der simulierten Schnittstellen-Aktionen: action id -> Lauf-Erzeuger.
+// Registry der simulierten Schnittstellen-Aktionen.
 // Aktionen vom Typ 'interface', die hier NICHT stehen, behalten den einfachen Knopf.
-const SYNC_ACTIONS: Record<string, () => SyncRun> = {
-  'sei-a1': contactSyncRun,
-  'sei-a3': klappOfferRun,
-  'sei-a5': klappRegistrationRun,
+// Ein Lauf darf mehr als das Panel füllen: er schreibt Ergebniswerte in die
+// Felder des Schritts und hakt die Aufgaben ab, die tatsächlich die Maschine
+// erledigt. Was ein Mensch bestätigen muss, bleibt offen.
+interface SyncActionDef {
+  build: () => SyncRun;
+  writesInputs?: { label: string; value: string }[];
+  completesTasks?: string[];
+}
+
+const SYNC_ACTIONS: Record<string, SyncActionDef> = {
+  'sei-a1': {
+    build: contactSyncRun,
+    writesInputs: [
+      { label: 'Bezogene Kinder', value: '24' },
+      { label: 'Datenquelle', value: 'Innosolv EWK über CMI ContactSync' },
+      { label: 'Selektions-ID', value: 'SEL-4711' },
+    ],
+    // Der geplante Task und der Bezug sind Maschinenarbeit. Das Abgrenzen des
+    // Jahrgangs (sei-t3) bleibt bei der Schulverwaltung.
+    completesTasks: ['sei-t1', 'sei-t2'],
+  },
+  'sei-a3': {
+    build: klappOfferRun,
+    completesTasks: ['sei-t8'],
+  },
+  'sei-a5': {
+    build: klappRegistrationRun,
+    completesTasks: ['sei-t12'],
+  },
+};
+
+// ============================================================
+// DOKUMENT-AKTIONEN (echte Dateien, die Word bzw. Excel öffnen)
+// ============================================================
+// Der Prototyp erzeugt hier wirklich eine Datei im Browser und gibt sie zum
+// Download. Word öffnet HTML mit der Endung .doc und dem passenden MIME-Typ
+// zuverlässig, das spart eine docx-Bibliothek (externe Libraries sind in
+// diesem Repo bewusst nicht erlaubt). Excel öffnet CSV mit Semikolon.
+
+interface DocumentActionDef {
+  fileName: string;
+  mime: string;
+  build: () => string;
+  completesTasks?: string[];
+  uploadsDocuments?: string[];   // Labels der Dokumentfelder, die danach als vorhanden gelten
+}
+
+const BRIEF_ABSENDER = `Gemeinde Dorfname<br>Schulverwaltung<br>Dorfstrasse 1<br>8000 Dorfname`;
+
+function zugangscode(index: number): string {
+  return `KG27-${String(index + 1).padStart(4, '0')}`;
+}
+
+/** Word-taugliches HTML-Grundgerüst. Print-Ansicht, A4, Ränder wie ein Amtsbrief. */
+function wordDocument(title: string, body: string): string {
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" `
+    + `xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">`
+    + `<head><meta charset="utf-8"><title>${title}</title>`
+    + `<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->`
+    + `<style>@page { size: A4; margin: 2.5cm 2.5cm 2cm 2.5cm; }`
+    + `body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }`
+    + `.absender { font-size: 9pt; color: #444; margin-bottom: 28pt; }`
+    + `.empfaenger { margin-bottom: 28pt; }`
+    + `.ort { text-align: right; margin-bottom: 24pt; }`
+    + `h1 { font-size: 12pt; margin: 0 0 14pt; }`
+    + `table { border-collapse: collapse; font-size: 10pt; }`
+    + `th, td { border: 1px solid #999; padding: 4pt 6pt; text-align: left; }`
+    + `th { background: #eee; }`
+    + `.code { font-family: Consolas, monospace; font-size: 13pt; letter-spacing: 1pt; }`
+    + `.codebox { border: 1px solid #333; padding: 8pt 12pt; display: inline-block; margin: 8pt 0 14pt; }`
+    + `.gruss { margin-top: 22pt; }`
+    + `.pb { page-break-before: always; }`
+    + `</style></head><body>${body}</body></html>`;
+}
+
+/** Serienbrief: ein Registrationsbrief je Familie, mit Klapp-Zugangscode. */
+function serienbriefRegistration(): string {
+  const seiten = KG_JAHRGANG_2027.map((kind, i) => {
+    const nachname = kind.name.split(' ')[0];
+    return `<div class="${i === 0 ? '' : 'pb'}">`
+      + `<p class="absender">${BRIEF_ABSENDER}</p>`
+      + `<p class="empfaenger">Erziehungsberechtigte von ${kind.name}<br>Familie ${nachname}<br>8000 Dorfname</p>`
+      + `<p class="ort">Dorfname, 31. August 2026</p>`
+      + `<h1>Anmeldung zum Kindergarten, Schuljahr 2027/28</h1>`
+      + `<p>Sehr geehrte Erziehungsberechtigte</p>`
+      + `<p>Ihr Kind <strong>${kind.name}</strong> tritt im August 2027 in den Kindergarten der `
+      + `Gemeinde Dorfname ein. Die Anmeldung erfolgt über Klapp, die Kommunikationsplattform `
+      + `unserer Schule.</p>`
+      + `<p>Bitte registrieren Sie sich mit dem folgenden persönlichen Zugangscode und füllen `
+      + `Sie das Anmeldeformular vollständig aus:</p>`
+      + `<p class="codebox">Zugangscode <span class="code">${zugangscode(i)}</span></p>`
+      + `<p><strong>Anmeldefrist: 30. September 2026.</strong> Ohne Anmeldung innerhalb der Frist `
+      + `können wir Ihrem Kind keinen Kindergartenplatz zuteilen und erinnern Sie schriftlich.</p>`
+      + `<p>Haben Sie kein Smartphone oder keinen Internetzugang, melden Sie sich bitte bei der `
+      + `Schulverwaltung. Wir nehmen die Anmeldung dann persönlich auf.</p>`
+      + `<p>Freundliche Grüsse</p>`
+      + `<p class="gruss">Schulverwaltung Dorfname<br>Sandra Meier, Leiterin</p>`
+      + `</div>`;
+  }).join('');
+  return wordDocument('Registrationsbriefe Kindergarten 2027/28', seiten);
+}
+
+/** Erinnerungsbrief: nur an Familien mit offener Anmeldung. */
+function erinnerungsbrief(offene: string[], mahnstufe: number): string {
+  const liste = offene.length ? offene : KG_JAHRGANG_2027.filter((k) => !k.angemeldetAm).map((k) => k.name);
+  const seiten = liste.map((name, i) => {
+    const nachname = name.split(' ')[0];
+    const idx = KG_JAHRGANG_2027.findIndex((k) => k.name === name);
+    return `<div class="${i === 0 ? '' : 'pb'}">`
+      + `<p class="absender">${BRIEF_ABSENDER}</p>`
+      + `<p class="empfaenger">Erziehungsberechtigte von ${name}<br>Familie ${nachname}<br>8000 Dorfname</p>`
+      + `<p class="ort">Dorfname, ${MAHNLAUF_DATUM[Math.min(mahnstufe, MAHNLAUF_DATUM.length) - 1] ?? '18.09.2026'}</p>`
+      + `<h1>Erinnerung: Anmeldung zum Kindergarten, Schuljahr 2027/28</h1>`
+      + `<p>Sehr geehrte Erziehungsberechtigte</p>`
+      + `<p>Am 31. August 2026 haben wir Ihnen den Registrationsbrief für die Anmeldung Ihres `
+      + `Kindes <strong>${name}</strong> zugestellt. Bis heute ist bei uns keine abgeschlossene `
+      + `Anmeldung eingegangen.</p>`
+      + `<p class="codebox">Zugangscode <span class="code">${idx >= 0 ? zugangscode(idx) : 'siehe Erstbrief'}</span></p>`
+      + `<p><strong>Bitte melden Sie Ihr Kind bis zum 30. September 2026 an.</strong> `
+      + `Dies ist die ${mahnstufe}. Erinnerung. Bleibt die Anmeldung aus, nimmt die `
+      + `Schulverwaltung telefonisch Kontakt mit Ihnen auf.</p>`
+      + `<p>Falls Sie sich bereits angemeldet haben, betrachten Sie dieses Schreiben als `
+      + `gegenstandslos und melden sich bitte kurz bei uns.</p>`
+      + `<p>Freundliche Grüsse</p>`
+      + `<p class="gruss">Schulverwaltung Dorfname<br>Sandra Meier, Leiterin</p>`
+      + `</div>`;
+  }).join('');
+  return wordDocument(`Erinnerungsbriefe Kindergarten 2027/28 (Mahnstufe ${mahnstufe})`, seiten);
+}
+
+/** Lückenliste für die Einwohnerkontrolle. Semikolon, damit Excel es direkt öffnet. */
+function dataGapCsv(): string {
+  const zeilen: string[] = [
+    'Kind;Fremdkey;Beanstandung;Auswirkung;Massnahme',
+    'Berisha Endrit;innosolv.Contact=88214;Kein zweiter Elternteil in der EWK;Anmeldung nur durch einen Elternteil moeglich;Nachfrage Einwohnerkontrolle',
+    'Iseli Ben;innosolv.Contact=88231;Kein zweiter Elternteil in der EWK;Anmeldung nur durch einen Elternteil moeglich;Nachfrage Einwohnerkontrolle',
+    'Roth Fiona;innosolv.Contact=88259;Kein zweiter Elternteil in der EWK;Anmeldung nur durch einen Elternteil moeglich;Nachfrage Einwohnerkontrolle',
+    'Egger Levin;innosolv.Contact=88220;Sorgerecht "ja" ohne Belegdokument;Anmeldung angreifbar;Belegdokument einfordern',
+    'Marti Anouk;innosolv.Contact=88244;Sorgerecht "ja" ohne Belegdokument;Anmeldung angreifbar;Belegdokument einfordern',
+    'Tanner Cyril;innosolv.Contact=88263;Keine Haushaltnummer geliefert;Wohnsituation unklar;Haushalt manuell erfassen',
+    'Frei Noah;innosolv.Contact=88223;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+    'Keller Mia;innosolv.Contact=88238;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+    'Steiner Lynn;innosolv.Contact=88261;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+  ];
+  return zeilen.join('\r\n');
+}
+
+const DOCUMENT_ACTIONS: Record<string, DocumentActionDef> = {
+  'sei-a2': {
+    fileName: 'Datenluecken_KG_2027-28.csv',
+    mime: 'text/csv;charset=utf-8',
+    build: dataGapCsv,
+    completesTasks: ['sei-t7'],
+  },
+  'sei-a4': {
+    fileName: 'Registrationsbriefe_KG_2027-28.doc',
+    mime: 'application/msword',
+    build: serienbriefRegistration,
+    completesTasks: ['sei-t9', 'sei-t10'],
+    uploadsDocuments: ['Serienbrief (Druckstapel)'],
+  },
+  'sei-a6': {
+    fileName: 'Erinnerungsbriefe_KG_2027-28.doc',
+    mime: 'application/msword',
+    build: () => erinnerungsbrief([], 1),
+    completesTasks: ['sei-t15', 'sei-t16'],
+    uploadsDocuments: ['Erinnerungsbrief (Druckstapel)'],
+  },
 };
 
 export interface LinkedDocument {
@@ -1588,12 +1696,12 @@ export class ProcessService {
     const step = this.findStepInTree(proc.steps, stepId);
     const action = step?.actions.find((a) => a.id === actionId);
     if (!step || !action || action.type !== 'interface') return;
-    const build = SYNC_ACTIONS[actionId];
-    if (!build) return; // plain interface action, no simulated run configured
+    const def = SYNC_ACTIONS[actionId];
+    if (!def) return; // plain interface action, no simulated run configured
 
     const previous = action.syncResult;
     this.patchSyncResult(proc.id, stepId, actionId, {
-      ...(previous ?? build()),
+      ...(previous ?? def.build()),
       status: 'running',
     });
 
@@ -1605,9 +1713,108 @@ export class ProcessService {
       this.syncTimers.delete(timerKey);
       const next = previous?.registrations
         ? this.pollRegistrations(previous)
-        : { ...build(), status: 'done' as const };
+        : { ...def.build(), status: 'done' as const };
       this.patchSyncResult(procId, stepId, actionId, next);
+      // A run does not only fill the panel: it writes its results into the step
+      // and ticks off the tasks the machine actually did.
+      const writes = [...(def.writesInputs ?? [])];
+      if (next.registrations) {
+        const angemeldet = next.registrations.filter((r) => r.status === 'angemeldet').length;
+        writes.push({ label: 'Anmeldung abgeschlossen', value: `${angemeldet} von ${next.registrations.length}` });
+      }
+      this.applyActionEffects(procId, stepId, writes, def.completesTasks, undefined);
     }, 900));
+  }
+
+  /**
+   * Writes the results of an automated action back onto the step: field values,
+   * machine tasks done, documents present. Anything a person has to confirm stays
+   * open on purpose, so a demo shows where the human decision sits.
+   */
+  private applyActionEffects(
+    processId: string,
+    stepId: string,
+    writesInputs?: { label: string; value: string }[],
+    completesTasks?: string[],
+    uploadsDocuments?: string[],
+  ): void {
+    if (!writesInputs?.length && !completesTasks?.length && !uploadsDocuments?.length) return;
+    const ps = structuredClone(this._processes());
+    const proc = ps.find((p) => p.id === processId);
+    if (!proc) return;
+    const step = this.findStepInTree(proc.steps, stepId);
+    if (!step) return;
+
+    for (const w of writesInputs ?? []) {
+      const input = step.inputs.find((i) => i.label === w.label);
+      if (input) input.value = w.value;
+    }
+    for (const taskId of completesTasks ?? []) {
+      const task = step.tasks.find((t) => t.id === taskId);
+      if (task) task.status = 'done';
+    }
+    for (const label of uploadsDocuments ?? []) {
+      const input = step.inputs.find((i) => i.label === label && i.type === 'document');
+      if (input) input.uploaded = true;
+    }
+    this._processes.set(ps);
+  }
+
+  // --- Dokument-Aktionen: erzeugen eine echte Datei für Word bzw. Excel ---
+
+  /** True if this action produces a downloadable file. */
+  isDocumentAction(actionId: string): boolean {
+    return actionId in DOCUMENT_ACTIONS;
+  }
+
+  /** Which document action produces this file, so an uploaded document can be reopened. */
+  documentActionForFile(fileName: string): string | undefined {
+    if (!fileName) return undefined;
+    return Object.keys(DOCUMENT_ACTIONS).find((id) => DOCUMENT_ACTIONS[id].fileName === fileName);
+  }
+
+  /** Label for the button, so the user sees what will open. */
+  documentActionLabel(actionId: string): string {
+    const def = DOCUMENT_ACTIONS[actionId];
+    if (!def) return 'Ausführen';
+    return def.mime.startsWith('text/csv') ? 'In Excel öffnen' : 'In Word öffnen';
+  }
+
+  /**
+   * Builds the file for a document action and applies its side effects.
+   * Returns the payload; the actual download is triggered by the component,
+   * because that is a DOM concern.
+   */
+  buildDocumentAction(stepId: string, actionId: string): { fileName: string; mime: string; content: string } | undefined {
+    const proc = this.activeProcess();
+    if (!proc) return undefined;
+    const step = this.findStepInTree(proc.steps, stepId);
+    const action = step?.actions.find((a) => a.id === actionId);
+    const def = DOCUMENT_ACTIONS[actionId];
+    if (!step || !action || !def) return undefined;
+
+    // The reminder letter only goes to families whose registration is still open,
+    // and it has to know the current Mahnstufe. Both live on the Klapp run.
+    let content: string;
+    if (actionId === 'sei-a6') {
+      const klapp = this.findKlappRun(proc);
+      const offen = (klapp?.registrations ?? []).filter((r) => r.status === 'offen').map((r) => r.name);
+      content = erinnerungsbrief(offen, (klapp?.mahnstufe ?? 0) + 1);
+    } else {
+      content = def.build();
+    }
+
+    this.applyActionEffects(proc.id, stepId, undefined, def.completesTasks, def.uploadsDocuments);
+    return { fileName: def.fileName, mime: def.mime, content };
+  }
+
+  /** The Klapp registration run of this process, wherever its step sits. */
+  private findKlappRun(proc: Process): SyncRun | undefined {
+    for (const s of this.flattenSteps(proc.steps)) {
+      const hit = s.actions?.find((a) => a.syncResult?.registrations?.length);
+      if (hit) return hit.syncResult;
+    }
+    return undefined;
   }
 
   /** One poll of the Klapp registration channel: at most one more family registers. */
@@ -1679,6 +1886,11 @@ export class ProcessService {
           : [`${offen === 1 ? 'Eine Anmeldung ist' : `${offen} Anmeldungen sind`} offen. `
              + `Nächster Erinnerungsbrief möglich, Mahnstufe ${mahnstufe} von ${maxMahnstufe}.`],
     });
+
+    // Keep the step field in sync with the panel, so both never disagree.
+    this.applyActionEffects(proc.id, stepId, [
+      { label: 'Anmeldung abgeschlossen', value: `${regs.length - offen} von ${regs.length}` },
+    ]);
   }
 
   // --- KI+ AI action (background assistant) ---
@@ -1862,7 +2074,6 @@ const CTX_EINBUERGERUNG: ContextObject = { id: '3', type: 'geschaeft', number: '
 const CTX_GEMEINDERAT: ContextObject = { id: '4', type: 'geschaeft', number: '2026-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse' };
 const CTX_VERANSTALTUNG: ContextObject = { id: '5', type: 'geschaeft', number: '2026-0071', title: 'Dorffest Sommer 2027' };
 const CTX_KESB: ContextObject = { id: '6', type: 'geschaeft', number: '2026-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider' };
-const CTX_SCHULEINTRITT: ContextObject = { id: '7', type: 'geschaeft', number: '2026-0088', title: 'Schuleintritt Ademi Elira (Schuljahr 2027/28)' };
 const CTX_SONDERPAED: ContextObject = { id: '8', type: 'geschaeft', number: '2026-0094', title: 'Sonderpädagogische Massnahme Bucher Tim (3. Klasse)' };
 const CTX_SCHULSTART: ContextObject = { id: '9', type: 'geschaeft', number: '2026-0101', title: 'Schulstart 2027/28: Einschreibung Kindergarten' };
 
@@ -1874,7 +2085,7 @@ const CTX_SITZUNG_BK: ContextObject = { id: 'sitz-bk-1', type: 'sitzung', number
 
 const ALL_CONTEXT_OBJECTS: ContextObject[] = [
   CTX_BAUGESUCH, CTX_AKTENEINSICHT, CTX_EINBUERGERUNG, CTX_GEMEINDERAT, CTX_VERANSTALTUNG, CTX_KESB,
-  CTX_SCHULEINTRITT, CTX_SONDERPAED, CTX_SCHULSTART,
+  CTX_SONDERPAED, CTX_SCHULSTART,
   CTX_SITZUNG_GR, CTX_SITZUNG_GV, CTX_SITZUNG_KESB, CTX_SITZUNG_BK,
 ];
 
@@ -2860,189 +3071,6 @@ const PROCESS_KESB: Process = {
 // WORKFLOW INSTANCES — demo instances for stakeholder presentation
 // ============================================================
 
-// Schulverwaltung 1: Schuleintritt. Regelfall ist der Eintritt per Stichtag;
-// hier beantragen die Eltern eine Rückstellung, deshalb Schulreifeabklärung
-// (parallel), Standortgespräch (Subprozess) und Entscheid der Bildungskommission.
-const PROCESS_SCHULEINTRITT: Process = {
-  id: 'proc-se',
-  title: 'Schuleintrittsverfahren',
-  processOwner: { name: 'Meier Sandra', role: 'Leiterin Schulverwaltung', email: 's.meier@schule-dorf.ch' },
-  steps: [
-    {
-      id: 'se-1', number: '6001', title: 'Anmeldung Schuleintritt eingegangen', status: 'completed', completedDate: '03.08.2026',
-      kind: 'step', stepType: 'activity', activityKind: 'notification',
-      responsible: 'System (Portal)', category: 'Schuleintritt',
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t1', title: 'Portal-Formular validieren', assignee: 'System', status: 'done' },
-        { id: 'se-t2', title: 'Eingangsbestätigung an Eltern senden', assignee: 'System', status: 'done' },
-        { id: 'se-t3', title: 'Geschäft eröffnen', assignee: 'System', status: 'done' },
-      ],
-      inputs: [
-        { id: 'se-i1', type: 'field', label: 'Kind', value: 'Ademi Elira', required: true, fieldType: 'text', thematicGroup: 'Kind' },
-        { id: 'se-i2', type: 'field', label: 'Geburtsdatum', value: '14.06.2021', required: true, fieldType: 'date', thematicGroup: 'Kind' },
-        { id: 'se-i3', type: 'field', label: 'Eintritt per Schuljahr', value: '2027/28', required: true, fieldType: 'text', thematicGroup: 'Kind' },
-        { id: 'se-i4', type: 'field', label: 'Erziehungsberechtigte', value: 'Ademi Fatime und Ademi Burim', required: true, fieldType: 'text', thematicGroup: 'Beteiligte' },
-        { id: 'se-i5', type: 'field', label: 'Schulkreis (Wohnadresse)', value: 'Dorf-Ost', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
-        { id: 'se-i6', type: 'field', label: 'Antrag der Eltern', value: 'Rückstellung um ein Jahr', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt'], thematicGroup: 'Antrag' },
-        { id: 'se-i7', type: 'document', label: 'Anmeldeformular', required: true, documentName: 'Anmeldung_Schuleintritt_Ademi.pdf', uploaded: true },
-      ],
-      actions: [{ id: 'se-a1', label: 'Eingangsbestätigung senden', type: 'standard', description: 'Stellt die Bestätigung im CMI Portal bereit' }],
-      completionCriteria: [{ id: 'se-c1', description: 'Anmeldung erfasst und Geschäft eröffnet', met: true }],
-      conditionals: [],
-    },
-    {
-      id: 'se-2', number: '6002', title: 'Vollständigkeitsprüfung & Registerabgleich', status: 'completed', completedDate: '12.08.2026',
-      kind: 'step', stepType: 'task',
-      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t4', title: 'Unterlagen auf Vollständigkeit prüfen', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'se-t5', title: 'Abgleich mit Einwohnerregister', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'se-t6', title: 'Bericht der Kindergartenlehrperson anfordern', assignee: 'Meier Sandra', status: 'done' },
-      ],
-      inputs: [
-        { id: 'se-i8', type: 'field', label: 'Unterlagen vollständig', value: 'Ja', required: true, fieldType: 'select', options: ['Ja', 'Nein'], thematicGroup: 'Prüfung' },
-        { id: 'se-i9', type: 'field', label: 'Einschulungsempfehlung', value: 'Vertiefte Abklärung nötig', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt', 'Vertiefte Abklärung nötig'], thematicGroup: 'Prüfung' },
-        { id: 'se-i10', type: 'document', label: 'Bericht Kindergarten', required: true, documentName: 'Bericht_KG_Ademi.pdf', uploaded: true },
-      ],
-      actions: [{ id: 'se-a2', label: 'Einschulungs-Screening', type: 'ai', description: 'KI-gestützte Vorbeurteilung von Stichtag, Schulkreis und Entwicklungshinweisen' }],
-      completionCriteria: [{ id: 'se-c2', description: 'Unterlagen vollständig und Register abgeglichen', met: true }],
-      conditionals: [{ id: 'se-co1', condition: 'Unterlagen vollständig == "Nein"', thenAction: 'Nachforderung über Portal auslösen' }],
-    },
-    {
-      id: 'se-3', number: '6003', title: 'Stichtagsprüfung & Schulkreiszuteilung', status: 'completed', completedDate: '19.08.2026',
-      kind: 'step', stepType: 'task',
-      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t7', title: 'Stichtag 31.07. prüfen', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'se-t8', title: 'Schuleinheit zuteilen', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'se-t9', title: 'Klassenbestand im Jahrgang prüfen', assignee: 'Meier Sandra', status: 'done' },
-      ],
-      inputs: [
-        { id: 'se-i11', type: 'field', label: 'Stichtag erfüllt', value: 'Ja (geb. 14.06.2021, Stichtag 31.07.2021)', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
-        { id: 'se-i12', type: 'field', label: 'Zugeteilte Schuleinheit', value: 'Primarschule Dorf-Ost', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
-        { id: 'se-i13', type: 'field', label: 'Freie Plätze im Jahrgang', value: '4', required: false, fieldType: 'number', thematicGroup: 'Zuteilung' },
-      ],
-      actions: [],
-      completionCriteria: [{ id: 'se-c3', description: 'Stichtag geprüft und Schuleinheit zugeteilt', met: true }],
-      conditionals: [],
-    },
-    {
-      id: 'se-4', number: '6004', title: 'Schulreifeabklärung', status: 'in-progress', dueDate: '24.09.2026',
-      kind: 'gateway', gatewayType: 'parallel',
-      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
-      parallelPathLabels: ['Kindergarten', 'Schulpsychologischer Dienst', 'Schulärztlicher Dienst'],
-      parallelPaths: [
-        [{ id: 'se-4a', number: '6004.1', title: 'Beurteilung Kindergartenlehrperson', status: 'completed', completedDate: '10.08.2026', responsible: 'Kindergarten Dorf-Ost', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: 'se-4b', number: '6004.2', title: 'Schulpsychologische Abklärung', status: 'in-progress', responsible: 'Schulpsychologischer Dienst', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: 'se-4c', number: '6004.3', title: 'Schulärztliche Untersuchung', status: 'pending', responsible: 'Schulärztlicher Dienst', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-      ],
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t10', title: 'Einverständnis der Eltern einholen', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'se-t11', title: 'Abklärung beim SPD beauftragen', assignee: 'Meier Sandra', status: 'in-progress' },
-        { id: 'se-t12', title: 'Termin schulärztliche Untersuchung vereinbaren', assignee: 'Meier Sandra', status: 'open' },
-      ],
-      inputs: [
-        { id: 'se-i14', type: 'document', label: 'Einverständniserklärung Eltern', required: true, documentName: 'Einverstaendnis_SPD_Ademi.pdf', uploaded: true },
-        { id: 'se-i15', type: 'document', label: 'SPD-Bericht', required: true, uploaded: false },
-        { id: 'se-i16', type: 'document', label: 'Schulärztlicher Bericht', required: true, uploaded: false },
-      ],
-      actions: [{ id: 'se-a3', label: 'Fachstellen erinnern', type: 'standard', description: 'Erinnerung an ausstehende Berichte' }],
-      completionCriteria: [{ id: 'se-c4', description: 'Alle Fachberichte liegen vor', met: false }],
-      conditionals: [],
-    },
-    {
-      id: 'se-5', number: '6005', title: 'Standortgespräch mit Eltern', status: 'pending',
-      kind: 'step', stepType: 'subprocess',
-      responsible: 'Vogt Daniel, Schulleitung', category: 'Schuleintritt',
-      subSteps: [
-        { id: 'se-5a', number: '6005.1', title: 'Gespräch terminieren und Eltern einladen', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-        { id: 'se-5b', number: '6005.2', title: 'Fachberichte gemeinsam besprechen', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-        { id: 'se-5c', number: '6005.3', title: 'Protokoll und Empfehlung festhalten', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-      ],
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t13', title: 'Eltern zum Standortgespräch einladen', assignee: 'Vogt Daniel', status: 'open' },
-        { id: 'se-t14', title: 'Fachberichte mit Eltern besprechen', assignee: 'Vogt Daniel', status: 'open' },
-        { id: 'se-t15', title: 'Empfehlung protokollieren', assignee: 'Vogt Daniel', status: 'open' },
-      ],
-      inputs: [
-        { id: 'se-i17', type: 'document', label: 'Protokoll Standortgespräch', required: true, uploaded: false },
-        { id: 'se-i18', type: 'field', label: 'Haltung der Eltern', required: true, fieldType: 'textarea', thematicGroup: 'Standortgespräch' },
-      ],
-      actions: [],
-      completionCriteria: [{ id: 'se-c5', description: 'Standortgespräch durchgeführt und protokolliert', met: false }],
-      conditionals: [],
-    },
-    {
-      id: 'se-6', number: '6006', title: 'Antrag an Bildungskommission', status: 'pending',
-      kind: 'step', stepType: 'task',
-      responsible: 'Vogt Daniel, Schulleitung', category: 'Schuleintritt',
-      contextLinks: [G('7'), S('sitz-bk-1')],  // Geschäft UND Sitzung der Bildungskommission
-      tasks: [
-        { id: 'se-t16', title: 'Antrag mit Begründung verfassen', assignee: 'Vogt Daniel', status: 'open' },
-        { id: 'se-t17', title: 'Geschäft traktandieren', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'se-t18', title: 'Unterlagen der Kommission zustellen', assignee: 'Meier Sandra', status: 'open' },
-      ],
-      inputs: [
-        { id: 'se-i19', type: 'document', label: 'Antrag an Bildungskommission', required: true, uploaded: false },
-        { id: 'se-i20', type: 'field', label: 'Antrag Schulleitung', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt'], thematicGroup: 'Entscheid' },
-      ],
-      actions: [{ id: 'se-a4', label: 'Traktandum anmelden', type: 'standard', description: 'Meldet das Geschäft für die nächste Sitzung der Bildungskommission an' }],
-      completionCriteria: [{ id: 'se-c6', description: 'Antrag eingereicht und traktandiert', met: false }],
-      conditionals: [],
-    },
-    {
-      id: 'se-6-gw', number: '', title: 'Einschulungsentscheid', status: 'pending',
-      kind: 'gateway', gatewayType: 'decision',
-      responsible: '', category: 'Schuleintritt',
-      branches: [
-        { id: 'bse-1', label: 'Regeleintritt', condition: 'Entscheid == "Regeleintritt"', steps: [] },
-        { id: 'bse-2', label: 'Rückstellung um ein Jahr', condition: 'Entscheid == "Rückstellung um ein Jahr"', steps: [] },
-        { id: 'bse-3', label: 'Vorzeitiger Eintritt', condition: 'Entscheid == "Vorzeitiger Eintritt"', steps: [] },
-      ],
-      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
-    },
-    {
-      id: 'se-7', number: '6007', title: 'Verfügung und Klassenzuteilung', status: 'pending',
-      kind: 'step', stepType: 'activity', activityKind: 'object-creation',
-      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t19', title: 'Verfügung mit Rechtsmittelbelehrung erstellen', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'se-t20', title: 'Verfügung den Eltern eröffnen', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'se-t21', title: 'Klassenzuteilung vornehmen', assignee: 'Vogt Daniel', status: 'open' },
-      ],
-      inputs: [
-        { id: 'se-i21', type: 'document', label: 'Verfügung Schuleintritt', required: true, uploaded: false },
-        { id: 'se-i22', type: 'field', label: 'Zugeteilte Klasse', required: false, fieldType: 'text', thematicGroup: 'Zuteilung' },
-      ],
-      actions: [
-        { id: 'se-a5', label: 'Verfügung generieren', type: 'script', description: 'Erstellt die Verfügung als PDF' },
-        { id: 'se-a6', label: 'Im Portal bereitstellen', type: 'standard', description: 'Stellt die Verfügung im CMI Portal bereit' },
-      ],
-      completionCriteria: [{ id: 'se-c7', description: 'Verfügung eröffnet und Klasse zugeteilt', met: false }],
-      conditionals: [{ id: 'se-co2', condition: 'Entscheid weicht vom Elternantrag ab', thenAction: 'Rechtsmittelfrist von 30 Tagen abwarten, Vollzug zurückstellen' }],
-    },
-    {
-      id: 'se-8', number: '6008', title: 'Übertritt vollzogen, Verfahren abgeschlossen', status: 'pending',
-      kind: 'step', stepType: 'task',
-      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
-      contextLinks: [G('7')],
-      tasks: [
-        { id: 'se-t22', title: 'Eintritt im Schuljahr 2027/28 bestätigen', assignee: 'Meier Sandra', status: 'open' },
-        { id: 'se-t23', title: 'Dossier archivieren', assignee: 'Sekretariat Schulverwaltung', status: 'open' },
-      ],
-      inputs: [], actions: [],
-      completionCriteria: [{ id: 'se-c8', description: 'Dossier archiviert', met: false }],
-      conditionals: [],
-    },
-  ],
-};
-
 // Schulverwaltung 2: sonderpädagogische Massnahme nach ICF-Logik. Abklärung als
 // Subprozess, Fachberichte parallel, Entscheid in der Bildungskommission,
 // danach jährliche Überprüfung mit Schleife zurück in die Massnahmenplanung.
@@ -3287,38 +3315,38 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
   processOwner: { name: 'Meier Sandra', role: 'Leiterin Schulverwaltung', email: 's.meier@schule-dorf.ch' },
   steps: [
     {
-      id: 'sei-1', number: '8001', title: 'Jahrgang aus ContactSync beziehen', status: 'completed', completedDate: '24.08.2026',
+      id: 'sei-1', number: '8001', title: 'Jahrgang aus ContactSync beziehen', status: 'in-progress', dueDate: '05.09.2026',
       kind: 'step', stepType: 'activity', activityKind: 'interface',
       responsible: 'Geplanter Task (ContactSync)', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t1', title: 'Geplanten Task auslösen', assignee: 'System', status: 'done' },
-        { id: 'sei-t2', title: 'Kinder inkl. Beziehungen und Haushalte beziehen', assignee: 'System', status: 'done' },
-        { id: 'sei-t3', title: 'Jahrgang 2027/28 abgrenzen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t1', title: 'Geplanten Task auslösen', assignee: 'System', status: 'open' },
+        { id: 'sei-t2', title: 'Kinder inkl. Beziehungen und Haushalte beziehen', assignee: 'System', status: 'open' },
+        { id: 'sei-t3', title: 'Jahrgang 2027/28 abgrenzen', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i1', type: 'field', label: 'Schuljahr', value: '2027/28', required: true, fieldType: 'text', thematicGroup: 'Jahrgang' },
         { id: 'sei-i2', type: 'field', label: 'Stufe', value: 'Kindergarten', required: true, fieldType: 'select', options: ['Kindergarten', '1. Primarklasse', 'Oberstufe'], thematicGroup: 'Jahrgang' },
-        { id: 'sei-i3', type: 'field', label: 'Bezogene Kinder', value: '24', required: true, fieldType: 'number', thematicGroup: 'Jahrgang' },
-        { id: 'sei-i4', type: 'field', label: 'Datenquelle', value: 'Innosolv EWK über CMI ContactSync', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
-        { id: 'sei-i5', type: 'field', label: 'Selektions-ID', value: 'SEL-4711', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
+        { id: 'sei-i3', type: 'field', label: 'Bezogene Kinder', required: true, fieldType: 'number', thematicGroup: 'Jahrgang' },
+        { id: 'sei-i4', type: 'field', label: 'Datenquelle', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
+        { id: 'sei-i5', type: 'field', label: 'Selektions-ID', required: true, fieldType: 'text', thematicGroup: 'Schnittstelle' },
       ],
       actions: [
-        { id: 'sei-a1', label: 'ContactSync-Lauf', type: 'interface', description: 'Bezieht die Schulkinder des Jahrgangs samt Eltern und Haushalt aus der Einwohnerkontrolle', syncResult: contactSyncRun() },
+        { id: 'sei-a1', label: 'ContactSync-Lauf auslösen', type: 'interface', description: 'Bezieht die Schulkinder des Jahrgangs samt Eltern und Haushalt aus der Einwohnerkontrolle' },
       ],
-      completionCriteria: [{ id: 'sei-c1', description: 'Jahrgang vollständig bezogen und abgegrenzt', met: true }],
+      completionCriteria: [{ id: 'sei-c1', description: 'Jahrgang vollständig bezogen und abgegrenzt', met: false }],
       conditionals: [],
     },
     {
-      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'completed', completedDate: '27.08.2026',
+      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'pending',
       kind: 'step', stepType: 'task',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t4', title: 'Beziehungen auf beide Elternteile prüfen', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t5', title: 'Sorgerecht plausibilisieren', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen (Mobilnummer)', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t4', title: 'Beziehungen auf beide Elternteile prüfen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t5', title: 'Sorgerecht plausibilisieren', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen (Mobilnummer)', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i6', type: 'field', label: 'Vollständige Datensätze', value: '18 von 24', required: true, fieldType: 'text', thematicGroup: 'Datenqualität' },
@@ -3328,59 +3356,59 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
         { id: 'sei-i10', type: 'field', label: 'Einschreibung trotz Lücken starten', value: 'Ja, Lücken werden parallel bereinigt', required: true, fieldType: 'select', options: ['Ja, Lücken werden parallel bereinigt', 'Nein, zuerst bereinigen'], thematicGroup: 'Entscheid' },
       ],
       actions: [
-        { id: 'sei-a2', label: 'Lückenliste exportieren', type: 'script', description: 'Erstellt die Liste der unvollständigen Datensätze für die Einwohnerkontrolle' },
+        { id: 'sei-a2', label: 'Lückenliste exportieren', type: 'script', description: 'Erstellt die Liste der unvollständigen Datensätze für die Einwohnerkontrolle, öffnet in Excel' },
       ],
       completionCriteria: [
-        { id: 'sei-c2', description: 'Datenqualität geprüft', met: true },
-        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: true },
+        { id: 'sei-c2', description: 'Datenqualität geprüft', met: false },
+        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: false },
       ],
       conditionals: [{ id: 'sei-co1', condition: 'Sorgerecht unbestätigt > 0', thenAction: 'Belegdokument bei den Erziehungsberechtigten einfordern, Anmeldung nur durch sorgeberechtigten Elternteil zulassen' }],
     },
     {
-      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'completed', completedDate: '31.08.2026',
+      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'pending',
       kind: 'step', stepType: 'activity', activityKind: 'document',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t8', title: 'Einschulungs-Angebot in Klapp publizieren', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t9', title: 'Serienbrief mit Zugangscodes erzeugen', assignee: 'System', status: 'done' },
-        { id: 'sei-t10', title: 'Druckauftrag auslösen', assignee: 'System', status: 'done' },
-        { id: 'sei-t11', title: 'Couvertierung und Postversand', assignee: 'Sekretariat Schulverwaltung', status: 'done' },
+        { id: 'sei-t8', title: 'Einschulungs-Angebot in Klapp publizieren', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sei-t9', title: 'Serienbrief mit Zugangscodes erzeugen', assignee: 'System', status: 'open' },
+        { id: 'sei-t10', title: 'Druckauftrag auslösen', assignee: 'System', status: 'open' },
+        { id: 'sei-t11', title: 'Couvertierung und Postversand', assignee: 'Sekretariat Schulverwaltung', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i11', type: 'field', label: 'Briefvorlage', value: 'Registrationsbrief Kindergarten (Klapp)', required: true, fieldType: 'text', thematicGroup: 'Versand' },
         { id: 'sei-i12', type: 'field', label: 'Anzahl Briefe', value: '24', required: true, fieldType: 'number', thematicGroup: 'Versand' },
         { id: 'sei-i13', type: 'field', label: 'Versanddatum', value: '31.08.2026', required: true, fieldType: 'date', thematicGroup: 'Versand' },
         { id: 'sei-i14', type: 'field', label: 'Anmeldefrist', value: '30.09.2026', required: true, fieldType: 'date', thematicGroup: 'Versand' },
-        { id: 'sei-i15', type: 'document', label: 'Serienbrief (Druckstapel)', required: true, documentName: 'Registrationsbriefe_KG_2027-28.pdf', uploaded: true },
+        { id: 'sei-i15', type: 'document', label: 'Serienbrief (Druckstapel)', required: true, documentName: 'Registrationsbriefe_KG_2027-28.doc', uploaded: false },
       ],
       actions: [
-        { id: 'sei-a3', label: 'Einschulungs-Angebot an Klapp senden', type: 'interface', description: 'Publiziert die Einschulung als Klapp-Angebot mit Angebotsoptionsgruppen', syncResult: klappOfferRun() },
-        { id: 'sei-a4', label: 'Serienbrief generieren', type: 'script', description: 'Erstellt den Druckstapel als PDF, ein Brief je Familie mit Klapp-Zugangscode' },
+        { id: 'sei-a3', label: 'Einschulungs-Angebot an Klapp senden', type: 'interface', description: 'Publiziert die Einschulung als Klapp-Angebot mit Angebotsoptionsgruppen' },
+        { id: 'sei-a4', label: 'Serienbrief generieren', type: 'script', description: 'Ein Brief je Familie mit persönlichem Klapp-Zugangscode, öffnet in Word' },
       ],
       completionCriteria: [
-        { id: 'sei-c4', description: 'Angebot in Klapp publiziert', met: true },
-        { id: 'sei-c5', description: 'Registrationsbriefe versendet', met: true },
+        { id: 'sei-c4', description: 'Angebot in Klapp publiziert', met: false },
+        { id: 'sei-c5', description: 'Registrationsbriefe versendet', met: false },
       ],
       conditionals: [],
     },
     {
-      id: 'sei-4', number: '8004', title: 'Anmeldungen in Klapp überwachen', status: 'in-progress', dueDate: '30.09.2026',
+      id: 'sei-4', number: '8004', title: 'Anmeldungen in Klapp überwachen', status: 'pending', dueDate: '30.09.2026',
       kind: 'step', stepType: 'activity', activityKind: 'interface',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
-        { id: 'sei-t12', title: 'Anmeldestand aus Klapp abgleichen', assignee: 'System', status: 'in-progress' },
+        { id: 'sei-t12', title: 'Anmeldestand aus Klapp abgleichen', assignee: 'System', status: 'open' },
         { id: 'sei-t13', title: 'Unvollständige Anmeldungen sichten', assignee: 'Meier Sandra', status: 'open' },
         { id: 'sei-t14', title: 'Familien ohne Klapp-Konto separat kontaktieren', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i16', type: 'field', label: 'Anmeldefrist', value: '30.09.2026', required: true, fieldType: 'date', thematicGroup: 'Rücklauf' },
-        { id: 'sei-i17', type: 'field', label: 'Anmeldung abgeschlossen', value: '6 von 24', required: true, fieldType: 'text', thematicGroup: 'Rücklauf' },
+        { id: 'sei-i17', type: 'field', label: 'Anmeldung abgeschlossen', required: true, fieldType: 'text', thematicGroup: 'Rücklauf' },
         { id: 'sei-i18', type: 'field', label: 'Maximale Mahnstufe', value: '3', required: true, fieldType: 'number', thematicGroup: 'Rücklauf' },
       ],
       actions: [
-        { id: 'sei-a5', label: 'Anmeldestand aus Klapp abgleichen', type: 'interface', description: 'Liest zurück, welche Familie die Schulanmeldung in Klapp abgeschlossen hat', syncResult: klappRegistrationRun() },
+        { id: 'sei-a5', label: 'Anmeldestand aus Klapp abgleichen', type: 'interface', description: 'Liest zurück, welche Familie die Schulanmeldung in Klapp abgeschlossen hat' },
       ],
       completionCriteria: [{ id: 'sei-c6', description: 'Alle Anmeldungen liegen vor oder sind abschliessend nachgefasst', met: false }],
       conditionals: [
@@ -3388,7 +3416,7 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
       ],
     },
     {
-      id: 'sei-4-gw', number: '', title: 'Anmeldungen noch offen?', status: 'in-progress',
+      id: 'sei-4-gw', number: '', title: 'Anmeldungen noch offen?', status: 'pending',
       kind: 'gateway', gatewayType: 'loop',
       loopCondition: 'Offene Anmeldungen > 0 und Mahnstufe < 3',
       loopBody: [
@@ -3407,7 +3435,7 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
             { id: 'sei-i20', type: 'document', label: 'Erinnerungsbrief (Druckstapel)', required: true, uploaded: false },
           ],
           actions: [
-            { id: 'sei-a6', label: 'Erinnerungsbrief generieren', type: 'script', description: 'Serienbrief an alle Familien mit offener Anmeldung' },
+            { id: 'sei-a6', label: 'Erinnerungsbrief generieren', type: 'script', description: 'Brief nur an die Familien mit offener Anmeldung, öffnet in Word' },
           ],
           completionCriteria: [{ id: 'sei-c7', description: 'Erinnerungsbrief versendet', met: false }],
           conditionals: [],
@@ -3420,22 +3448,22 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
       id: 'sei-6', number: '8006', title: 'Einzelfälle eröffnen', status: 'pending',
       kind: 'step', stepType: 'activity', activityKind: 'object-creation',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
-      contextLinks: [G('9'), G('7')],  // Sammelgeschäft UND ein daraus eröffneter Einzelfall
+      contextLinks: [G('9')],
       tasks: [
         { id: 'sei-t18', title: 'Lernendendossier je Kind anlegen', assignee: 'System', status: 'open' },
-        { id: 'sei-t19', title: 'Schuleintrittsverfahren pro Kind starten', assignee: 'System', status: 'open' },
+        { id: 'sei-t19', title: 'Stamm- und Anmeldedaten auf das Lernendendossier übernehmen', assignee: 'System', status: 'open' },
         { id: 'sei-t20', title: 'Abweichende Anträge (Rückstellung, vorzeitiger Eintritt) markieren', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i21', type: 'field', label: 'Zu eröffnende Lernendendossiers', value: '24', required: true, fieldType: 'number', thematicGroup: 'Ausleitung' },
         { id: 'sei-i22', type: 'field', label: 'Davon mit abweichendem Antrag', value: '2', required: false, fieldType: 'number', thematicGroup: 'Ausleitung' },
-        { id: 'sei-i23', type: 'field', label: 'Folgeprozess', value: 'Schuleintrittsverfahren', required: true, fieldType: 'text', thematicGroup: 'Ausleitung' },
+        { id: 'sei-i23', type: 'field', label: 'Zielobjekt je Kind', value: 'Lernendendossier', required: true, fieldType: 'text', thematicGroup: 'Ausleitung' },
       ],
       actions: [
-        { id: 'sei-a7', label: 'Einzelverfahren starten', type: 'script', description: 'Startet je Kind eine Instanz des Schuleintrittsverfahrens auf dem Lernendendossier' },
+        { id: 'sei-a7', label: 'Lernendendossiers anlegen', type: 'script', description: 'Legt je Kind ein Lernendendossier an und übernimmt Stammdaten, Beziehungen und Anmeldedaten' },
       ],
       completionCriteria: [{ id: 'sei-c8', description: 'Alle Einzelfälle eröffnet', met: false }],
-      conditionals: [{ id: 'sei-co3', condition: 'Antrag der Eltern != "Regeleintritt"', thenAction: 'Fall im Schuleintrittsverfahren für die Bildungskommission traktandieren' }],
+      conditionals: [{ id: 'sei-co3', condition: 'Antrag der Eltern != "Regeleintritt"', thenAction: 'Fall der Bildungskommission zum Entscheid vorlegen (Rückstellung oder vorzeitiger Eintritt)' }],
     },
     {
       id: 'sei-7', number: '8007', title: 'Jahrgang abschliessen und Klassenbildung freigeben', status: 'pending',
@@ -3638,11 +3666,6 @@ const INSTANCE_DOSSIER_KESB: Process = {
   startedAt: '04.08.2026', startedBy: 'Hans Berger', instanceState: 'running', events: [],
 };
 
-const INSTANCE_DOSSIER_SE: Process = {
-  ...PROCESS_SCHULEINTRITT,
-  id: 'inst-dossier-se', kind: 'instance', templateId: 'proc-se',
-  startedAt: '03.08.2026', startedBy: 'Meier Sandra', instanceState: 'running', events: [],
-};
 const INSTANCE_DOSSIER_SP: Process = {
   ...PROCESS_SONDERPAED,
   id: 'inst-dossier-sp', kind: 'instance', templateId: 'proc-sp',
@@ -3652,11 +3675,8 @@ const INSTANCE_DOSSIER_SP: Process = {
 const INSTANCE_DOSSIER_SEI: Process = {
   ...PROCESS_SCHULEINSCHREIBUNG,
   id: 'inst-dossier-sei', kind: 'instance', templateId: 'proc-sei',
-  startedAt: '24.08.2026', startedBy: 'Geplanter Task (ContactSync)', instanceState: 'running', events: [
-    { id: 'sei-e4', timestamp: '2026-09-01T09:00:00Z', type: 'step_completed', description: 'Klapp meldet 6 von 24 abgeschlossenen Anmeldungen', actor: 'Schnittstelle Klapp', stepId: 'sei-4', stepTitle: 'Anmeldungen in Klapp überwachen' },
-    { id: 'sei-e3', timestamp: '2026-08-31T14:20:00Z', type: 'step_completed', description: 'Schritt «Klapp-Registrationsbrief erstellen und versenden» abgeschlossen', actor: 'Meier Sandra', stepId: 'sei-3', stepTitle: 'Klapp-Registrationsbrief erstellen und versenden' },
-    { id: 'sei-e2', timestamp: '2026-08-27T10:15:00Z', type: 'step_completed', description: 'Schritt «Datenqualität prüfen» abgeschlossen', actor: 'Meier Sandra', stepId: 'sei-2', stepTitle: 'Datenqualität prüfen' },
-    { id: 'sei-e1', timestamp: '2026-08-24T02:15:00Z', type: 'started', description: 'Workflow «Schuleinschreibung Kindergarten 2027/28» durch den geplanten ContactSync-Task gestartet', actor: 'Geplanter Task (ContactSync)' },
+  startedAt: '01.09.2026', startedBy: 'Meier Sandra', instanceState: 'running', events: [
+    { id: 'sei-e1', timestamp: '2026-09-01T08:00:00Z', type: 'started', description: 'Workflow «Schuleinschreibung Kindergarten 2027/28» gestartet von Meier Sandra', actor: 'Meier Sandra' },
   ],
 };
 
@@ -3667,7 +3687,6 @@ const ALL_PROCESSES: Process[] = [
   PROCESS_GEMEINDERAT,
   PROCESS_VERANSTALTUNG,
   PROCESS_KESB,
-  PROCESS_SCHULEINTRITT,
   PROCESS_SONDERPAED,
   PROCESS_SCHULEINSCHREIBUNG,
   INSTANCE_BAUGESUCH_1,
@@ -3679,7 +3698,6 @@ const ALL_PROCESSES: Process[] = [
   INSTANCE_DOSSIER_VA,
   INSTANCE_DOSSIER_VA_2,
   INSTANCE_DOSSIER_KESB,
-  INSTANCE_DOSSIER_SE,
   INSTANCE_DOSSIER_SP,
   INSTANCE_DOSSIER_SEI,
 ];
@@ -3919,47 +3937,6 @@ const DOSSIER_KESB: Dossier = {
   ],
 };
 
-const DOSSIER_SCHULEINTRITT: Dossier = {
-  id: '7', number: '2026-0088', title: 'Schuleintritt Ademi Elira (Schuljahr 2027/28)',
-  processId: 'inst-dossier-se',
-  serviceRequest: {
-    id: 'sr-7', portalFormTitle: 'Schuleintritt anmelden', submittedDate: '03.08.2026', submittedBy: 'Ademi Fatime', email: 'f.ademi@example.ch',
-    status: 'in-bearbeitung', portalStatus: 'In Abklärung',
-    messages: [
-      { id: 'm60', date: '03.08.2026 09:10', author: 'System', direction: 'to-citizen', text: 'Die Anmeldung für den Schuleintritt Ihres Kindes ist eingegangen.', read: true },
-      { id: 'm61', date: '12.08.2026 10:30', author: 'Meier Sandra', direction: 'to-citizen', text: 'Guten Tag Frau Ademi, für die Beurteilung Ihres Rückstellungsantrags brauchen wir Ihr Einverständnis für eine schulpsychologische Abklärung. Das Formular liegt im Portal bereit.', read: true },
-      { id: 'm62', date: '17.08.2026 16:45', author: 'Ademi Fatime', direction: 'from-citizen', text: 'Das Einverständnis habe ich unterschrieben und hochgeladen. Wann findet die Abklärung statt?', read: true },
-      { id: 'm63', date: '19.08.2026 08:20', author: 'Meier Sandra', direction: 'to-citizen', text: 'Der Schulpsychologische Dienst meldet sich direkt bei Ihnen für einen Termin. Der Entscheid fällt an der Sitzung der Bildungskommission vom 21.10.2026.', read: false },
-    ],
-    portalDocuments: [
-      { id: 'pd60', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_SE_2026-0088.pdf', direction: 'to-citizen', uploadDate: '03.08.2026' },
-      { id: 'pd61', name: 'Anmeldeformular Schuleintritt', fileName: 'Anmeldung_Schuleintritt_Ademi.pdf', direction: 'from-citizen', uploadDate: '03.08.2026' },
-      { id: 'pd62', name: 'Bericht Kindergarten', fileName: 'Bericht_KG_Ademi.pdf', direction: 'from-citizen', uploadDate: '10.08.2026', description: 'Beurteilung der Kindergartenlehrperson' },
-      { id: 'pd63', name: 'Einverständniserklärung Abklärung', fileName: 'Einverstaendnis_SPD_Ademi.pdf', direction: 'from-citizen', uploadDate: '17.08.2026', description: 'Einverständnis der Erziehungsberechtigten' },
-    ],
-    formData: [
-      { label: 'Kind', value: 'Ademi Elira' },
-      { label: 'Geburtsdatum', value: '14.06.2021' },
-      { label: 'Eintritt per Schuljahr', value: '2027/28' },
-      { label: 'Schulkreis', value: 'Dorf-Ost' },
-      { label: 'Antrag der Eltern', value: 'Rückstellung um ein Jahr' },
-    ],
-  },
-  notes: [
-    { id: 'se-n1', date: '03.08.2026 09:30', author: 'Meier Sandra', subject: 'Anmeldung mit Rückstellungsantrag', text: 'Anmeldung Ademi Elira eingegangen. Die Eltern beantragen eine Rückstellung um ein Jahr. Der Stichtag 31.07. ist erfüllt, das Kind wäre regulär einzuschulen. Vertiefte Abklärung nötig.', visibility: 'intern' },
-    { id: 'se-n2', date: '12.08.2026 11:00', author: 'Meier Sandra', text: 'Bericht der Kindergartenlehrperson liegt vor: sprachliche Entwicklung altersgemäss, Ausdauer und Selbstständigkeit noch schwach. Der Kindergarten empfiehlt, eine Rückstellung zu prüfen.', visibility: 'intern' },
-    { id: 'se-n3', date: '19.08.2026 08:30', author: 'Vogt Daniel', subject: 'Traktandierung Bildungskommission', text: 'Geschäft für die Sitzung der Bildungskommission vom 21.10.2026 vorgemerkt. Bis dahin müssen der SPD-Bericht und die schulärztliche Untersuchung vorliegen.', visibility: 'intern' },
-  ],
-  participants: [
-    { id: 'se-p1', role: 'Erziehungsberechtigte', roleType: 'primary', name: 'Ademi Fatime', email: 'f.ademi@example.ch', phone: '079 234 56 78', since: '03.08.2026' },
-    { id: 'se-p2', role: 'Leiterin Schulverwaltung', roleType: 'internal', name: 'Meier Sandra', organization: 'Schulverwaltung Dorfname', email: 's.meier@schule-dorf.ch', phone: '044 222 33 44', since: '03.08.2026' },
-    { id: 'se-p3', role: 'Schulleitung', roleType: 'internal', name: 'Vogt Daniel', organization: 'Primarschule Dorf-Ost', email: 'd.vogt@schule-dorf.ch', since: '12.08.2026' },
-    { id: 'se-p4', role: 'Kindergartenlehrperson', roleType: 'internal', name: 'Brunner Silvia', organization: 'Kindergarten Dorf-Ost', since: '10.08.2026' },
-    { id: 'se-p5', role: 'Schulpsychologischer Dienst', roleType: 'authority', name: 'Dr. Lang Miriam', organization: 'SPD Region', email: 'm.lang@spd-region.ch', since: '12.08.2026' },
-    { id: 'se-p6', role: 'Bildungskommission', roleType: 'authority', name: 'Bildungskommission', organization: 'Gemeinde Dorfname', since: '19.08.2026' },
-  ],
-};
-
 const DOSSIER_SONDERPAED: Dossier = {
   id: '8', number: '2026-0094', title: 'Sonderpädagogische Massnahme Bucher Tim (3. Klasse)',
   processId: 'inst-dossier-sp',
@@ -4012,11 +3989,9 @@ const DOSSIER_SCHULSTART: Dossier = {
   id: '9', number: '2026-0101', title: 'Schulstart 2027/28: Einschreibung Kindergarten',
   processId: 'inst-dossier-sei',
   notes: [
-    { id: 'sei-n1', date: '24.08.2026 06:30', author: 'System (ContactSync)', subject: 'ContactSync-Lauf vom 24.08.2026', text: '26 neue Kontakte aus der Innosolv-EWK bezogen, 24 davon im Kindergarten-Jahrgang 2027/28. Beziehungen und Haushalte wurden mitsynchronisiert. Der Lauf lief 41 Minuten und meldet drei Warnungen.', visibility: 'intern' },
-    { id: 'sei-n2', date: '27.08.2026 10:15', author: 'Meier Sandra', subject: 'Datenqualität geprüft', text: '18 von 24 Datensätzen sind vollständig. Die sechs Lücken betreffen drei Kinder ohne zweiten Elternteil, zwei mit unbestätigtem Sorgerecht und drei Familien ohne Mobilnummer für Klapp. Die Einschreibung startet trotzdem, die Lücken werden parallel über die Einwohnerkontrolle bereinigt.', visibility: 'intern' },
-    { id: 'sei-n3', date: '31.08.2026 16:00', author: 'Meier Sandra', subject: 'Registrationsbriefe versendet', text: '24 Briefe mit Klapp-Zugangscode gedruckt und aufgegeben, Anmeldefrist 30.09.2026. Das Einschulungs-Angebot ist in Klapp publiziert, sieben Angebotsoptionsgruppen, davon fünf Pflicht. Achtung: Klapp unterstützt keine Mehrfachauswahl, der Betreuungsbedarf ist als drei Ja/Nein-Gruppen abgebildet.', visibility: 'intern' },
-    { id: 'sei-n4', date: '01.09.2026 09:00', author: 'Meier Sandra', text: 'Rücklauf startet: 6 von 24 Familien haben die Anmeldung in Klapp abgeschlossen. Erste Erinnerung frühestens Mitte September, alles andere wirkt hektisch. Die drei Familien ohne Klapp-Konto brauchen ohnehin einen separaten Weg.', visibility: 'intern' },
-    { id: 'sei-n5', date: '01.09.2026 09:20', author: 'Vogt Daniel', subject: 'Hinweis Sorgerecht', text: 'Beim unklaren Sorgerecht nicht auf den EWK-Wert abstützen. Dort steht oft «ja», ohne dass es belegt ist. Wir brauchen das Belegdokument, sonst ist die Anmeldung angreifbar.', visibility: 'intern' },
+    { id: 'sei-n1', date: '01.09.2026 07:45', author: 'Meier Sandra', subject: 'Jahrgang 2027/28 eröffnet', text: 'Sammelgeschäft für die Einschreibung des Kindergarten-Jahrgangs 2027/28 eröffnet. Der ContactSync-Lauf gegen die Innosolv-EWK ist ausgelöst, danach folgen Datenqualitätsprüfung und Registrationsbriefe. Ziel: Anmeldefrist 30.09.2026.', visibility: 'intern' },
+    { id: 'sei-n2', date: '01.09.2026 07:50', author: 'Vogt Daniel', subject: 'Hinweis Sorgerecht', text: 'Beim Sorgerecht nicht auf den EWK-Wert abstützen. Dort steht oft «ja», ohne dass es belegt ist. Wir brauchen das Belegdokument, sonst ist die Anmeldung angreifbar.', visibility: 'intern' },
+    { id: 'sei-n3', date: '01.09.2026 07:55', author: 'Meier Sandra', text: 'Familien ohne Klapp-Konto brauchen einen separaten Weg. Letztes Jahr waren es drei, die Anmeldung haben wir dort persönlich aufgenommen.', visibility: 'intern' }
   ],
   participants: [
     { id: 'sei-p1', role: 'Leiterin Schulverwaltung', roleType: 'internal', name: 'Meier Sandra', organization: 'Schulverwaltung Dorfname', email: 's.meier@schule-dorf.ch', phone: '044 222 33 44', since: '24.08.2026' },
@@ -4035,7 +4010,6 @@ const ALL_DOSSIERS: Dossier[] = [
   DOSSIER_GEMEINDERAT,
   DOSSIER_VERANSTALTUNG,
   DOSSIER_KESB,
-  DOSSIER_SCHULEINTRITT,
   DOSSIER_SONDERPAED,
   DOSSIER_SCHULSTART,
 ];
@@ -4215,34 +4189,27 @@ const SITZUNG_BK: Sitzung = {
       status: 'offen',
     },
     {
-      id: 'trakt-bk-3', number: '3', title: 'Schuleintritt Ademi Elira: Rückstellungsantrag der Eltern',
-      category: 'Schuleintritte',
-      contextLinks: [G('7')],
-      status: 'offen',
-      processStepIds: [{ processId: 'proc-se', stepId: 'se-6' }],
-    },
-    {
-      id: 'trakt-bk-4', number: '4', title: 'Sonderpädagogische Massnahme Bucher Tim: Antrag integrative Förderung und Logopädie',
+      id: 'trakt-bk-3', number: '3', title: 'Sonderpädagogische Massnahme Bucher Tim: Antrag integrative Förderung und Logopädie',
       category: 'Sonderpädagogik',
       contextLinks: [G('8')],
       status: 'offen',
       processStepIds: [{ processId: 'proc-sp', stepId: 'sp-7' }],
     },
     {
-      id: 'trakt-bk-5', number: '5', title: 'Schulraumplanung 2027 bis 2032: Zwischenbericht',
+      id: 'trakt-bk-4', number: '4', title: 'Schulraumplanung 2027 bis 2032: Zwischenbericht',
       category: 'Schulraum',
       contextLinks: [],
       status: 'zur-kenntnis',
     },
     {
-      id: 'trakt-bk-6', number: '6', title: 'Schulstart 2027/28: Zwischenbericht Einschreibung Kindergarten',
+      id: 'trakt-bk-5', number: '5', title: 'Schulstart 2027/28: Zwischenbericht Einschreibung Kindergarten',
       category: 'Schulstart',
       contextLinks: [G('9')],
       status: 'zur-kenntnis',
       processStepIds: [{ processId: 'proc-sei', stepId: 'sei-7' }],
     },
     {
-      id: 'trakt-bk-7', number: '7', title: 'Verschiedenes',
+      id: 'trakt-bk-6', number: '6', title: 'Verschiedenes',
       category: 'Diverses',
       contextLinks: [],
       status: 'offen',
@@ -4259,7 +4226,6 @@ const SITZUNG_BK: Sitzung = {
   documents: [
     { id: 'sd-bk-1', name: 'Einladung Bildungskommission 21.10.2026', fileName: 'Einladung_BK_2026-05.pdf', type: 'einladung', uploadDate: '14.10.2026' },
     { id: 'sd-bk-2', name: 'Protokoll 4. Sitzung', fileName: 'Protokoll_BK_2026-04.pdf', type: 'protokoll', uploadDate: '08.09.2026' },
-    { id: 'sd-bk-3', name: 'Antrag Rückstellung Ademi inkl. Fachberichte', fileName: 'Antrag_Rueckstellung_Ademi.pdf', type: 'traktandum', uploadDate: '15.10.2026' },
     { id: 'sd-bk-4', name: 'Antrag sonderpädagogische Massnahme Bucher', fileName: 'Antrag_SPM_Bucher_BK.pdf', type: 'traktandum', uploadDate: '15.10.2026' },
     { id: 'sd-bk-5', name: 'Zwischenbericht Schulraumplanung 2027 bis 2032', fileName: 'Schulraumplanung_Zwischenbericht.pdf', type: 'beilage', uploadDate: '12.10.2026' },
   ],

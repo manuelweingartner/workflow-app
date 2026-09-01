@@ -392,7 +392,10 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                         <span class="doc-name pending">Noch nicht hochgeladen</span>
                       }
                     </div>
-                    <button class="doc-btn">{{ input.uploaded ? 'Öffnen' : 'Hochladen' }}</button>
+                    <button class="doc-btn" (click)="openDocument(step.id, input)"
+                            [title]="docOpensInWord(input) ? 'Öffnet das Dokument in Word' : ''">
+                      {{ input.uploaded ? (docOpensInWord(input) ? 'In Word öffnen' : 'Öffnen') : 'Hochladen' }}
+                    </button>
                   </div>
                 }
               </div>
@@ -426,9 +429,15 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                   <button class="action-btn interface" (click)="runSync(step.id, action.id)" [disabled]="action.syncResult?.status === 'running'">
                     @if (action.syncResult?.status === 'running') {
                       <span class="ai-spinner"></span> Abgleich läuft…
+                    } @else if (action.syncResult?.status === 'done') {
+                      Erneut abgleichen
                     } @else {
-                      Abgleich simulieren
+                      Abgleich auslösen
                     }
+                  </button>
+                } @else if (isInstance() && svc.isDocumentAction(action.id) && step.status === 'in-progress') {
+                  <button class="action-btn document" (click)="runDocument(step.id, action.id)">
+                    {{ svc.documentActionLabel(action.id) }}
                   </button>
                 } @else {
                   <button class="action-btn" [class]="action.type">Ausführen</button>
@@ -815,6 +824,8 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
     .action-type-badge.ai { background: linear-gradient(135deg, #f3e8ff, #e6f4fd); color: #7c3aed; }
     .action-type-badge.interface { background: #e8f5e9; color: #2e7d32; }
     .action-btn.interface { background: #2e7d32; }
+    .action-btn.document { background: #1b5e9e; }
+    .doc-btn { cursor: pointer; }
 
     /* Schnittstellen-Lauf (ContactSync, Klapp) */
     .sync-result {
@@ -1189,6 +1200,42 @@ export class StepDetailComponent {
 
   runMahnlauf(stepId: string, actionId: string) {
     this.svc.runKlappMahnlauf(stepId, actionId);
+  }
+
+  // --- Dokument-Aktionen: echte Datei erzeugen und dem Browser übergeben ---
+
+  runDocument(stepId: string, actionId: string) {
+    const doc = this.svc.buildDocumentAction(stepId, actionId);
+    if (doc) this.download(doc.fileName, doc.mime, doc.content);
+  }
+
+  /** True when this document field points at a file Word can open. */
+  docOpensInWord(input: StepInput): boolean {
+    return !!input.uploaded && /\.docx?$/i.test(input.documentName ?? '');
+  }
+
+  /** Opening an uploaded Serienbrief rebuilds it, so the file is always current. */
+  openDocument(stepId: string, input: StepInput) {
+    if (!input.uploaded) return;   // "Hochladen" is not modelled in this prototype
+    const actionId = this.svc.documentActionForFile(input.documentName ?? '');
+    if (!actionId) return;
+    const doc = this.svc.buildDocumentAction(stepId, actionId);
+    if (doc) this.download(doc.fileName, doc.mime, doc.content);
+  }
+
+  /** A BOM makes Word and Excel read the file as UTF-8 instead of guessing. */
+  private download(fileName: string, mime: string, content: string) {
+    const blob = new Blob(['﻿' + content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke late: some browsers still read the blob while the download starts.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   syncOutcomeLabel(outcome: string) {

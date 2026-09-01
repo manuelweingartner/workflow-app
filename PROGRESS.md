@@ -10,10 +10,12 @@
 - [x] **Dashboard**: Startseite wenn alle Tabs geschlossen (Meine Prozesse, Geschäfte, Sitzungen, Stats)
 - [x] **Tab-System**: Multi-Typ-Tabs in App-Bar (Prozess/Geschäft/Sitzung mit eigenem Icon)
 - [x] **Tab-Picker**: + Button öffnet Dropdown zum Öffnen neuer Tabs
-- [x] **9 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB, Schuleintritt, Sonderpädagogik, Schuleinschreibung
+- [x] **8 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB, Sonderpädagogik, Schuleinschreibung
 - [x] **4 Demo-Sitzungen**: Gemeinderatssitzung, Bildungskommission, KESB-Spruchkörpersitzung, Gemeindeversammlung
 - [x] **Schulverwaltung (01.09.2026)**: zwei Bildungsprozesse mit laufender Instanz, beide traktandiert in der Bildungskommission BK-2026-05
 - [x] **Massenverfahren (01.09.2026)**: Schuleinschreibung als Jahrgangsverfahren, ContactSync als zeitgesteuerter Trigger, Warte-Aktivität auf Klapp, Loop mit gefülltem Rumpf, Ausleitung in die Einzelfälle
+- [x] **Dokument-Aktionen (01.09.2026)**: `DOCUMENT_ACTIONS` erzeugt echte Dateien im Browser. Serienbrief und Erinnerungsbrief öffnen in Word (.doc mit Word-HTML), Lückenliste in Excel (CSV). Keine externe Library
+- [x] **Demo-Zustand (01.09.2026)**: Schuleinschreibung startet bei Schritt 1, nichts vorbelegt. Ein Lauf schreibt Feldwerte und hakt nur die Maschinenaufgaben ab, der menschliche Entscheid bleibt sichtbar offen
 - [x] **Schnittstellen-Panel (01.09.2026)**: `Action.type = 'interface'` plus `SyncRun`, Registry `SYNC_ACTIONS`, simulierter Klapp-Rückkanal mit Anmeldestand je Kind und Mahnlauf. Kein Request verlässt den Browser
 - [x] **Testdaten-Refresh (01.09.2026)**: alle Mock-Daten auf Referenz-‚heute‘ 01.09.2026, Saison-Events in die Zukunft (Dorffest 06.2027, Streetparade 08.2027)
 - [x] **Kontextobjekte**: Geschäft + Sitzung, Querverknüpfungen, klickbar → öffnet Tab
@@ -39,7 +41,6 @@
 | Veranstaltung | — | 4 Fachstellen | — | — |
 | KESB | Entscheid (4 Pfade) | — | Abklärung (4 Schritte) | — |
 | Akteneinsicht | — | — | — | — |
-| Schuleintritt | Einschulung (3 Pfade) | Schulreife (Kindergarten, SPD, Schularzt) | Standortgespräch (3 Schritte) | — |
 | Sonderpädagogik | Massnahme (4 Pfade) | SPD, Logopädie, KJPD | Schulische Abklärung (4 Schritte) | jährliche Überprüfung |
 | Schuleinschreibung | — | — | — | Mahnlauf (gefüllter Rumpf, endet an Mahnstufe 3) |
 

@@ -105,24 +105,23 @@ src/app/
 
 ## Mock-Daten
 
-9 Prozesse + Dossiers mit Kontrollfluss:
+8 Prozesse + Dossiers mit Kontrollfluss:
 1. **Baugesuch** (11 Schritte): Subprocess (Öff. Auflage), Parallel (3 Fachberichte), Decision (Bewilligt/Auflagen/Abgelehnt), Loop (Rohbaukontrolle)
 2. **Akteneinsicht** (7 Schritte)
 3. **Einbürgerung** (9 Schritte): Parallel (Sprache+Integration), Decision (Empfohlen/Nicht/Zurückgestellt), Schritt 6 → Sitzung GV-2027-06
 4. **Gemeinderat** (8 Schritte): Decision (Angenommen/Abgelehnt/Zurückgestellt mit Loop-Back), Schritte 5+6 → Sitzung GR-2026-10
 5. **Veranstaltung** (9 Schritte): Parallel (4 Fachstellen), Schritt 6 → Sitzung GR-2026-10
 6. **KESB** (9 Schritte): Subprocess (Abklärung: 4 Teilschritte), Decision (4 Massnahme-Optionen), Schritt 6 → Sitzung KESB-2026-16
-7. **Schuleintritt** (9 Knoten, Schulverwaltung): Parallel (Schulreifeabklärung: Kindergarten, SPD, Schularzt), Subprocess (Standortgespräch: 3 Teilschritte), Decision (Regeleintritt/Rückstellung/vorzeitiger Eintritt), Schritt 6006 → Sitzung BK-2026-05
-8. **Sonderpädagogik** (12 Knoten, Schulverwaltung): Subprocess (Schulische Abklärung: 4 Teilschritte), Parallel (SPD, Logopädie, KJPD), Decision (4 Massnahme-Optionen), Loop (jährliche Überprüfung), Schritt 7007 → Sitzung BK-2026-05
-9. **Schuleinschreibung** (9 Knoten, Schulverwaltung): **Jahrgangs- bzw. Massenverfahren**, läuft nicht pro Fall sondern einmal pro Schuljahr über einen ganzen Jahrgang. Schnittstelle als zeitgesteuerter Trigger (ContactSync), Warte-Aktivität auf ein Fremdsystem (Klapp), Loop mit **gefülltem** Rumpf (Mahnlauf, endet an der Mahnstufe), Schritt 8006 leitet die Einzelfälle ins Schuleintrittsverfahren aus. Traktandiert in BK-2026-05.
+7. **Sonderpädagogik** (12 Knoten, Schulverwaltung): Subprocess (Schulische Abklärung: 4 Teilschritte), Parallel (SPD, Logopädie, KJPD), Decision (4 Massnahme-Optionen), Loop (jährliche Überprüfung), Schritt 7007 → Sitzung BK-2026-05
+8. **Schuleinschreibung** (9 Knoten, Schulverwaltung): **Jahrgangs- bzw. Massenverfahren**, läuft nicht pro Fall sondern einmal pro Schuljahr über einen ganzen Jahrgang. Schnittstelle als zeitgesteuerter Trigger (ContactSync), Warte-Aktivität auf ein Fremdsystem (Klapp), Loop mit **gefülltem** Rumpf (Mahnlauf, endet an der Mahnstufe), Schritt 8006 legt je Kind ein Lernendendossier an. Traktandiert in BK-2026-05.
 
 4 Sitzungen:
 - GR-2026-10: Gemeinderatssitzung 15.10.2026 (5 Traktanden, 2 mit Geschäfts-Verknüpfung)
-- BK-2026-05: Bildungskommission 21.10.2026 (6 Traktanden, Schuleintritt Ademi + Sonderpädagogik Bucher)
+- BK-2026-05: Bildungskommission 21.10.2026 (6 Traktanden, Sonderpädagogik Bucher + Zwischenbericht Einschreibung)
 - KESB-2026-16: KESB-Spruchkörpersitzung 17.11.2026 (3 Traktanden, Gefahrenmeldung Schneider)
 - GV-2027-06: Gemeindeversammlung 18.06.2027 (4 Traktanden, Einbürgerung Rossi)
 
-(Die Bildungskommission hat seit 01.09.2026 sieben Traktanden: Nr. 6 ist der Zwischenbericht zur Einschreibung, Verschiedenes ist Nr. 7.)
+(Traktandum 5 der Bildungskommission ist der Zwischenbericht zur Einschreibung, Verschiedenes ist Nr. 6.)
 
 ### Zeitachse der Mock-Daten
 
@@ -145,16 +144,20 @@ Instanz nach ihrem ersten erledigten Schritt.
 
 ## Zwei Kardinalitäten, nicht vermischen
 
-Die Prozesse 1 bis 8 sind **Einzelfallverfahren**: eine Instanz, ein Fall, ein Kind.
-Prozess 9 (Schuleinschreibung) ist ein **Massenverfahren**: eine Instanz, ein
-ganzer Jahrgang. Das ist eine bewusste Trennung, keine Inkonsistenz.
+Die Prozesse 1 bis 7 sind **Einzelfallverfahren**: eine Instanz, ein Fall, eine
+Person. Prozess 8 (Schuleinschreibung) ist ein **Massenverfahren**: eine Instanz,
+ein ganzer Jahrgang. Das ist eine bewusste Trennung, keine Inkonsistenz.
 
 **Die beiden nicht in einen Prozess mischen.** Eine Instanz zeigt einen
 Fortschrittsbalken und einen aktuellen Schritt. Ein gemischter Prozess würde
 zuerst «24 Kinder importiert» und danach «Verfügung für Ademi Elira» anzeigen,
 was schlicht falsch wäre. Der Übergang passiert stattdessen explizit in Schritt
-8006 «Einzelfälle eröffnen», das je Kind ein Lernendendossier anlegt und dort das
-Schuleintrittsverfahren startet.
+8006 «Einzelfälle eröffnen», das je Kind ein **Lernendendossier** anlegt.
+
+**Ein Einzelfallverfahren für den Schuleintritt ist bewusst nicht modelliert**
+(am 01.09.2026 entfernt, es überschnitt sich fachlich mit der Einschreibung).
+Wer es später braucht: Schritt 8006 ist die Andockstelle, dort würde je Kind eine
+Instanz gestartet.
 
 ## Schnittstellen-Simulation (ContactSync, Klapp)
 
@@ -171,12 +174,62 @@ Referenzdatum steht in `SYNC_POLL_DATE`, der Rücklauf pro Mahnstufe in
 `MAHNLAUF_RUECKLAUF` (7 / 6 / 4 von 18 offenen Fällen, der letzte Fall bleibt
 bewusst offen und muss telefonisch nachgefasst werden).
 
-Zwei Methoden im Service:
+Methoden im Service:
 - `runSyncAction()` läuft die Schnittstelle neu. Beim Klapp-Rückkanal ist das
   **nicht destruktiv**: die Liste je Kind bleibt, höchstens eine weitere Familie
   meldet sich an. Andere Schnittstellen werden aus dem Builder neu gebaut.
 - `runKlappMahnlauf()` ist der Schleifenrumpf: Brief an alle Offenen, danach
   meldet sich ein deterministischer Anteil an. Begrenzt durch `maxMahnstufe`.
+- `applyActionEffects()` schreibt die Folgen eines Laufs in den Schritt:
+  Feldwerte, erledigte Aufgaben, vorhandene Dokumente. **Nur was die Maschine
+  wirklich tut**, wird abgehakt. Was ein Mensch bestätigen muss, bleibt offen,
+  damit in der Demo sichtbar ist, wo der menschliche Entscheid sitzt.
+
+## Dokument-Aktionen: Word und Excel gehen wirklich auf
+
+`DOCUMENT_ACTIONS` in `process.service.ts` erzeugt **echte Dateien im Browser**
+und gibt sie zum Download. Word öffnet HTML mit der Endung `.doc` und dem
+MIME-Typ `application/msword` zuverlässig, Excel öffnet CSV mit Semikolon. Das
+spart eine docx-Bibliothek, externe Libraries sind in diesem Repo bewusst nicht
+erlaubt.
+
+| Aktion | Datei | Inhalt |
+|---|---|---|
+| `sei-a2` Lückenliste exportieren | `Datenluecken_KG_2027-28.csv` | 9 Beanstandungen mit Fremdkey und Massnahme |
+| `sei-a4` Serienbrief generieren | `Registrationsbriefe_KG_2027-28.doc` | 24 Briefe, je Familie ein Klapp-Zugangscode `KG27-00xx` |
+| `sei-a6` Erinnerungsbrief generieren | `Erinnerungsbriefe_KG_2027-28.doc` | **nur** die Familien mit offener Anmeldung, Mahnstufe im Text |
+
+Der Erinnerungsbrief liest den aktuellen Klapp-Stand: er adressiert genau die
+noch offenen Familien und nennt die richtige Mahnstufe. Ein bereits vorhandenes
+Dokumentfeld kann über «In Word öffnen» neu erzeugt werden, die Datei ist damit
+immer aktuell.
+
+Der eigentliche Download passiert in der Komponente (`step-detail`), nicht im
+Service: Blob und Anchor sind DOM-Sache. Ein BOM voran, sonst raten Word und
+Excel beim Encoding.
+
+## Demo-Zustand der Schuleinschreibung
+
+**Die Instanz startet bei Schritt 1**, nichts ist vorbelegt: keine erledigten
+Schritte, keine Laufergebnisse, leere Ergebnisfelder. Wer die Demo führt, klickt
+sich von 8001 durch und sieht bei jedem Schritt, was die Automation übernimmt.
+
+Ein Durchlauf sieht so aus:
+1. **8001** «ContactSync-Lauf auslösen»: Panel erscheint, 24 Kinder, drei
+   Warnungen. Die Felder Datenquelle, Selektions-ID und Bezogene Kinder füllen
+   sich von selbst.
+2. **8002** «In Excel öffnen» lädt die Lückenliste und hakt die Nacherfassung
+   ab. Die drei Prüfaufgaben bleiben für den Menschen.
+3. **8003** «Einschulungs-Angebot an Klapp senden», danach «In Word öffnen»:
+   24 Registrationsbriefe. Das Dokumentfeld gilt danach als vorhanden.
+4. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Dann
+   «Mahnlauf simulieren», dreimal, bis die Mahnstufe erschöpft ist.
+
+**Achtung bei Aufgaben:** ein Klick auf eine Aufgabe schaltet
+`offen -> in Arbeit -> erledigt`, es braucht also **zwei** Klicks bis erledigt.
+Und Schritte mit `stepType: 'activity'` verbergen Aufgaben und Kriterien und
+lassen sich direkt abschliessen (`canCompleteStep` lässt sie durch). Das
+betrifft 8001, 8003, 8004 und ist bestehende Konvention, kein Fehler.
 
 ### Fachliche Quellen (Confluence, Stand 01.09.2026)
 
