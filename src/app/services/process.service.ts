@@ -1808,6 +1808,30 @@ export class ProcessService {
     return { fileName: def.fileName, mime: def.mime, content };
   }
 
+  /**
+   * The reminder letters for the families whose registration is still open.
+   *
+   * Fachlich gehört diese Aktion in den Schleifenrumpf (Schritt 8005), dort ist
+   * sie in der Instanzansicht aber nicht erreichbar: der Rumpf wird nur als
+   * Struktur gezeichnet. Darum wird sie zusätzlich direkt aus dem Klapp-Panel
+   * angeboten, wo auch der Mahnlauf sitzt.
+   */
+  buildReminderLetters(): { fileName: string; mime: string; content: string; empfaenger: number } | undefined {
+    const proc = this.activeProcess();
+    if (!proc) return undefined;
+    const klapp = this.findKlappRun(proc);
+    if (!klapp?.registrations) return undefined;
+    const offen = klapp.registrations.filter((r) => r.status === 'offen').map((r) => r.name);
+    if (!offen.length) return undefined;
+    const def = DOCUMENT_ACTIONS['sei-a6'];
+    return {
+      fileName: def.fileName,
+      mime: def.mime,
+      content: erinnerungsbrief(offen, (klapp.mahnstufe ?? 0) + 1),
+      empfaenger: offen.length,
+    };
+  }
+
   /** The Klapp registration run of this process, wherever its step sits. */
   private findKlappRun(proc: Process): SyncRun | undefined {
     for (const s of this.flattenSteps(proc.steps)) {

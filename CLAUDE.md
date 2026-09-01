@@ -200,7 +200,15 @@ erlaubt.
 | `sei-a6` Erinnerungsbrief generieren | `Erinnerungsbriefe_KG_2027-28.doc` | **nur** die Familien mit offener Anmeldung, Mahnstufe im Text |
 
 Der Erinnerungsbrief liest den aktuellen Klapp-Stand: er adressiert genau die
-noch offenen Familien und nennt die richtige Mahnstufe. Ein bereits vorhandenes
+noch offenen Familien und nennt die richtige Mahnstufe. Belegt: 18 Briefe mit
+«1. Erinnerung», nach einem Mahnlauf 11 Briefe mit «2. Erinnerung».
+
+**Wichtig zur Erreichbarkeit:** fachlich gehört diese Aktion in den
+Schleifenrumpf (Schritt 8005), dort ist sie in der Instanzansicht aber **nicht
+anklickbar**, weil der Rumpf nur als Struktur gezeichnet wird. Darum sitzt der
+Knopf «Erinnerungsbriefe in Word öffnen» zusätzlich direkt im Klapp-Panel neben
+dem Mahnlauf (`buildReminderLetters()`). Wer die Aktion aus dem Rumpf entfernt,
+muss den Knopf mitentfernen. Ein bereits vorhandenes
 Dokumentfeld kann über «In Word öffnen» neu erzeugt werden, die Datei ist damit
 immer aktuell.
 

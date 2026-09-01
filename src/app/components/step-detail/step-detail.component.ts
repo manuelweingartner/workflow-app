@@ -509,6 +509,10 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
                         </ul>
                         @if (isInstance() && step.status === 'in-progress') {
                           <div class="sync-reg-actions">
+                            <button class="sync-brief-btn" (click)="runReminderLetters()"
+                                    [disabled]="!offeneAnmeldungen(sync)">
+                              Erinnerungsbriefe in Word öffnen
+                            </button>
                             <button class="sync-mahn-btn" (click)="runMahnlauf(step.id, action.id)"
                                     [disabled]="!canMahnen(sync)">
                               Mahnlauf simulieren
@@ -896,6 +900,11 @@ import { ContextObject, TabType, ProcessStep, StepType, GatewayType, ActivityKin
       border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
     }
     .sync-mahn-btn:disabled { background: #c3cdc6; cursor: not-allowed; }
+    .sync-brief-btn {
+      padding: 5px 12px; background: #1b5e9e; color: white; border: none;
+      border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .sync-brief-btn:disabled { background: #c3cdc6; cursor: not-allowed; }
     .action-info { flex: 1; display: flex; flex-direction: column; }
     .action-label { font-size: 14px; color: #353c46; }
     .action-desc { font-size: 12px; color: #6c7e93; }
@@ -1207,6 +1216,16 @@ export class StepDetailComponent {
   runDocument(stepId: string, actionId: string) {
     const doc = this.svc.buildDocumentAction(stepId, actionId);
     if (doc) this.download(doc.fileName, doc.mime, doc.content);
+  }
+
+  /** Reminder letters for exactly the families that are still open. */
+  runReminderLetters() {
+    const doc = this.svc.buildReminderLetters();
+    if (doc) this.download(doc.fileName, doc.mime, doc.content);
+  }
+
+  offeneAnmeldungen(sync: SyncRun): number {
+    return (sync.registrations ?? []).filter((r) => r.status === 'offen').length;
   }
 
   /** True when this document field points at a file Word can open. */
