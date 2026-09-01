@@ -105,18 +105,40 @@ src/app/
 
 ## Mock-Daten
 
-6 Prozesse + Dossiers mit Kontrollfluss:
-1. **Baugesuch** (11 Schritte) — Subprocess (Öff. Auflage), Parallel (3 Fachberichte), Decision (Bewilligt/Auflagen/Abgelehnt), Loop (Rohbaukontrolle)
+8 Prozesse + Dossiers mit Kontrollfluss:
+1. **Baugesuch** (11 Schritte): Subprocess (Öff. Auflage), Parallel (3 Fachberichte), Decision (Bewilligt/Auflagen/Abgelehnt), Loop (Rohbaukontrolle)
 2. **Akteneinsicht** (7 Schritte)
-3. **Einbürgerung** (9 Schritte) — Parallel (Sprache+Integration), Decision (Empfohlen/Nicht/Zurückgestellt), Schritt 6 → Sitzung GV-2025-06
-4. **Gemeinderat** (8 Schritte) — Decision (Angenommen/Abgelehnt/Zurückgestellt mit Loop-Back), Schritte 5+6 → Sitzung GR-2025-04
-5. **Veranstaltung** (9 Schritte) — Parallel (4 Fachstellen), Schritt 6 → Sitzung GR-2025-04
-6. **KESB** (9 Schritte) — Subprocess (Abklärung: 4 Teilschritte), Decision (4 Massnahme-Optionen), Schritt 6 → Sitzung KESB-2025-12
+3. **Einbürgerung** (9 Schritte): Parallel (Sprache+Integration), Decision (Empfohlen/Nicht/Zurückgestellt), Schritt 6 → Sitzung GV-2027-06
+4. **Gemeinderat** (8 Schritte): Decision (Angenommen/Abgelehnt/Zurückgestellt mit Loop-Back), Schritte 5+6 → Sitzung GR-2026-10
+5. **Veranstaltung** (9 Schritte): Parallel (4 Fachstellen), Schritt 6 → Sitzung GR-2026-10
+6. **KESB** (9 Schritte): Subprocess (Abklärung: 4 Teilschritte), Decision (4 Massnahme-Optionen), Schritt 6 → Sitzung KESB-2026-16
+7. **Schuleintritt** (9 Knoten, Schulverwaltung): Parallel (Schulreifeabklärung: Kindergarten, SPD, Schularzt), Subprocess (Standortgespräch: 3 Teilschritte), Decision (Regeleintritt/Rückstellung/vorzeitiger Eintritt), Schritt 6006 → Sitzung BK-2026-05
+8. **Sonderpädagogik** (12 Knoten, Schulverwaltung): Subprocess (Schulische Abklärung: 4 Teilschritte), Parallel (SPD, Logopädie, KJPD), Decision (4 Massnahme-Optionen), Loop (jährliche Überprüfung), Schritt 7007 → Sitzung BK-2026-05
 
-3 Sitzungen:
-- GR-2025-04: Gemeinderatssitzung (5 Traktanden, 2 mit Geschäfts-Verknüpfung)
-- GV-2025-06: Gemeindeversammlung (4 Traktanden, Einbürgerung Rossi)
-- KESB-2025-12: KESB-Spruchkörpersitzung (3 Traktanden, Gefahrenmeldung Schneider)
+4 Sitzungen:
+- GR-2026-10: Gemeinderatssitzung 15.10.2026 (5 Traktanden, 2 mit Geschäfts-Verknüpfung)
+- BK-2026-05: Bildungskommission 21.10.2026 (6 Traktanden, Schuleintritt Ademi + Sonderpädagogik Bucher)
+- KESB-2026-16: KESB-Spruchkörpersitzung 17.11.2026 (3 Traktanden, Gefahrenmeldung Schneider)
+- GV-2027-06: Gemeindeversammlung 18.06.2027 (4 Traktanden, Einbürgerung Rossi)
+
+### Zeitachse der Mock-Daten
+
+**Referenz-„heute" ist der 01.09.2026** (Stand des Refreshs vom 01.09.2026). Daran
+hängt alles: abgeschlossene Schritte liegen im Juni bis August 2026, offene
+Fristen im September 2026, geplante Sitzungen ab Oktober 2026.
+
+Beim nächsten Refresh gilt: **Saison-Events werden nicht mitverschoben, sondern
+auf ihre nächste echte Zukunfts-Ausgabe gesetzt.** Dorffest (Sommer) steht darum
+auf dem 19./20.06.2027, die Streetparade auf dem 14.08.2027 (zweiter Samstag im
+August), die Gemeindeversammlung „Sommer" auf dem 18.06.2027. Ein reiner
+Monats-Shift würde ein Dorffest in den November legen.
+
+Die Verfahrensdaten selbst sind pro Cluster verschoben, nicht global: Baugesuch
+liegt weiter zurück als die übrigen Geschäfte, die beiden Elsa-Instanzen
+(`inst-proc-bau-demo1`, `inst-proc-eb-demo1`) haben ihre eigene Achse. Wer
+Datumsangaben ändert, muss die `startedAt` der Instanzen und die
+`completedDate` des jeweils ersten Schritts zusammenhalten, sonst startet eine
+Instanz nach ihrem ersten erledigten Schritt.
 
 ## Wichtig
 

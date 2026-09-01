@@ -154,7 +154,7 @@ import { Process } from '../../models/process.model';
           Nächste Sitzungen
         </h2>
         <div class="geschaeft-grid">
-          @for (s of svc.sitzungen(); track s.id) {
+          @for (s of upcomingSitzungen(); track s.id) {
             <div class="card geschaeft-card sitzung" (click)="svc.openTab('sitzung', s.id)">
               <div class="ges-icon-col sitzung-icon">
                 <i class="material-icons">event</i>
@@ -320,6 +320,19 @@ export class DashboardComponent {
   @Output() openImport = new EventEmitter<void>();
   @Output() openNewTemplate = new EventEmitter<void>();
   svc = inject(ProcessService);
+
+  // "Nächste Sitzungen" has to read chronologically. The mock data is grouped by
+  // body (Gemeinderat, GV, KESB, Bildungskommission), not by date, so sort here.
+  upcomingSitzungen = computed(() =>
+    this.svc.sitzungen().slice().sort((a, b) => this.sitzungSortKey(a.date) - this.sitzungSortKey(b.date)),
+  );
+
+  // 'TT.MM.JJJJ' -> sortable number. Unparseable dates sort last.
+  private sitzungSortKey(date: string): number {
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(date.trim());
+    if (!m) return Number.MAX_SAFE_INTEGER;
+    return Number(m[3]) * 10000 + Number(m[2]) * 100 + Number(m[1]);
+  }
 
   templateName(templateId: string | undefined): string {
     if (!templateId) return '—';

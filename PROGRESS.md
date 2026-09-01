@@ -1,6 +1,6 @@
 # CMI Workflow App — Progress & Backlog
 
-## Aktueller Stand (2026-04-01)
+## Aktueller Stand (2026-09-01)
 
 ### Implementiert
 
@@ -10,8 +10,10 @@
 - [x] **Dashboard**: Startseite wenn alle Tabs geschlossen (Meine Prozesse, Geschäfte, Sitzungen, Stats)
 - [x] **Tab-System**: Multi-Typ-Tabs in App-Bar (Prozess/Geschäft/Sitzung mit eigenem Icon)
 - [x] **Tab-Picker**: + Button öffnet Dropdown zum Öffnen neuer Tabs
-- [x] **6 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB
-- [x] **3 Demo-Sitzungen**: Gemeinderatssitzung, Gemeindeversammlung, KESB-Spruchkörpersitzung
+- [x] **8 Demo-Prozesse**: Baugesuch, Akteneinsicht, Einbürgerung, Gemeinderat, Veranstaltung, KESB, Schuleintritt, Sonderpädagogik
+- [x] **4 Demo-Sitzungen**: Gemeinderatssitzung, Bildungskommission, KESB-Spruchkörpersitzung, Gemeindeversammlung
+- [x] **Schulverwaltung (01.09.2026)**: zwei Bildungsprozesse mit laufender Instanz, beide traktandiert in der Bildungskommission BK-2026-05
+- [x] **Testdaten-Refresh (01.09.2026)**: alle Mock-Daten auf Referenz-‚heute‘ 01.09.2026, Saison-Events in die Zukunft (Dorffest 06.2027, Streetparade 08.2027)
 - [x] **Kontextobjekte**: Geschäft + Sitzung, Querverknüpfungen, klickbar → öffnet Tab
 - [x] **Prozess-View**: Eigene Sidebar (Prozessübersicht, Alle Aufgaben, Alle Dokumente)
 - [x] **Geschäft-View**: Volles Menu, ganzer Prozess sichtbar, eigene Schritte hervorgehoben
@@ -35,6 +37,8 @@
 | Veranstaltung | — | 4 Fachstellen | — | — |
 | KESB | Entscheid (4 Pfade) | — | Abklärung (4 Schritte) | — |
 | Akteneinsicht | — | — | — | — |
+| Schuleintritt | Einschulung (3 Pfade) | Schulreife (Kindergarten, SPD, Schularzt) | Standortgespräch (3 Schritte) | — |
+| Sonderpädagogik | Massnahme (4 Pfade) | SPD, Logopädie, KJPD | Schulische Abklärung (4 Schritte) | jährliche Überprüfung |
 
 ---
 

@@ -69,35 +69,45 @@ const DEMO_INSTANCE_SEEDS: DemoInstanceSeed[] = [
   // Veranstaltung: Dorffest (template defaults already describe the Dorffest).
   {
     instanceId: 'inst-dossier-va', assessmentStepId: 'va-3', decisionLabels: ['Risikostufe'],
-    title: 'Dorffest Sommer 2025', startedAt: '20.02.2025', startedBy: 'Frei Barbara',
+    title: 'Dorffest Sommer 2027', startedAt: '20.07.2026', startedBy: 'Frei Barbara',
   },
   // Veranstaltung: Streetparade (large-scale; overrides the event data).
   {
     instanceId: 'inst-dossier-va2', assessmentStepId: 'va-3', decisionLabels: ['Risikostufe'],
-    title: 'Streetparade Zürich 2025', startedAt: '12.02.2025', startedBy: 'Hans Berger',
+    title: 'Streetparade Zürich 2027', startedAt: '12.07.2026', startedBy: 'Hans Berger',
     stripContextLinks: true, replaceText: { from: 'Dorffest', to: 'Streetparade' },
     fieldOverrides: [
       { stepId: 'va-1', label: 'Veranstalter', value: 'Verein Streetparade Zürich' },
-      { stepId: 'va-1', label: 'Veranstaltung', value: 'Streetparade Zürich 2025' },
-      { stepId: 'va-1', label: 'Datum', value: '09.08.2025' },
+      { stepId: 'va-1', label: 'Veranstaltung', value: 'Streetparade Zürich 2027' },
+      { stepId: 'va-1', label: 'Datum', value: '14.08.2027' },
       { stepId: 'va-1', label: 'Erwartete Besucherzahl', value: "ca. 900'000" },
     ],
   },
   // Gemeinderatsanfrage: KI+ Ressort-Triage.
   {
     instanceId: 'inst-dossier-gr', assessmentStepId: 'gr-2', decisionLabels: ['Zuständiges Ressort'],
-    startedAt: '01.03.2025', startedBy: 'Schmid Andrea',
+    startedAt: '01.08.2026', startedBy: 'Schmid Andrea',
   },
   // KESB-Gefahrenmeldung: KI+ Gefährdungs-Screening.
   {
     instanceId: 'inst-dossier-kesb', assessmentStepId: 'kes-2',
     decisionLabels: ['Dringlichkeitsstufe', 'Sofortmassnahmen nötig'],
-    startedAt: '04.03.2025', startedBy: 'Dr. Gerber Nicole',
+    startedAt: '04.08.2026', startedBy: 'Dr. Gerber Nicole',
   },
   // Akteneinsicht: KI+ Datenschutz-Check.
   {
     instanceId: 'inst-dossier-ae', assessmentStepId: 'ae-2', decisionLabels: ['Berechtigungsstatus'],
-    startedAt: '10.03.2025', startedBy: 'Weber Claudia',
+    startedAt: '10.08.2026', startedBy: 'Weber Claudia',
+  },
+  // Schuleintritt: KI+ Einschulungs-Screening.
+  {
+    instanceId: 'inst-dossier-se', assessmentStepId: 'se-2', decisionLabels: ['Einschulungsempfehlung'],
+    startedAt: '03.08.2026', startedBy: 'Meier Sandra',
+  },
+  // Sonderpädagogik: KI+ Förderbedarf-Screening.
+  {
+    instanceId: 'inst-dossier-sp', assessmentStepId: 'sp-2', decisionLabels: ['Empfohlene Massnahmenstufe'],
+    startedAt: '29.06.2026', startedBy: 'Vogt Daniel',
   },
 ];
 
@@ -191,13 +201,13 @@ function seedDemoInstances(processes: Process[]): Process[] {
     p.events = [
       ...completed.slice().reverse().map((s, k) => ({
         id: `${p.id}-evc${k}`,
-        timestamp: `2025-03-0${Math.min(9, 2 + k)}T10:00:00Z`,
+        timestamp: `2026-08-0${Math.min(9, 2 + k)}T10:00:00Z`,
         type: 'step_completed' as const,
         description: `Schritt «${s.title}» abgeschlossen`,
         actor, stepId: s.id, stepTitle: s.title,
       })),
       {
-        id: `${p.id}-ev0`, timestamp: '2025-03-01T09:00:00Z', type: 'started' as const,
+        id: `${p.id}-ev0`, timestamp: '2026-08-01T09:00:00Z', type: 'started' as const,
         description: `Workflow «${p.title}» gestartet von ${actor}`, actor,
       },
     ];
@@ -455,6 +465,129 @@ function generateDatenschutzCheck(proc: Process): GeneratedAssessment {
   };
 }
 
+// --- KI+ Einschulungs-Screening ------------------------------------------
+// Beurteilt Stichtag, Elternantrag und die Hinweise aus dem Kindergarten und
+// schlägt eine Einschulungsvariante vor. Der Entscheid bleibt bei der
+// Bildungskommission.
+function generateEinschulungAssessment(proc: Process): GeneratedAssessment {
+  const kind = readInputValue(proc, 'Kind') || 'Kind unbekannt';
+  const geburt = readInputValue(proc, 'Geburtsdatum') || 'unbekannt';
+  const antrag = readInputValue(proc, 'Antrag der Eltern') || 'Regeleintritt';
+  const schulkreis = readInputValue(proc, 'Schulkreis (Wohnadresse)') || 'nicht zugeteilt';
+  const jahr = readInputValue(proc, 'Eintritt per Schuljahr') || 'folgendes Schuljahr';
+
+  const rueckstellung = /rückstellung/i.test(antrag);
+  const vorzeitig = /vorzeitig/i.test(antrag);
+
+  let empfehlung = 'Regeleintritt';
+  let begruendung = 'Der Stichtag ist erfüllt und es liegen keine Hinweise auf einen abweichenden Entwicklungsstand vor.';
+  let abklaerung = 'Keine vertiefte Abklärung nötig.';
+  if (rueckstellung) {
+    empfehlung = 'Vertiefte Abklärung nötig';
+    begruendung = 'Die Eltern beantragen eine Rückstellung, obwohl der Stichtag erfüllt ist. Eine Rückstellung ist eine Abweichung vom Regelfall und braucht eine fachliche Grundlage.';
+    abklaerung = 'Schulpsychologische Abklärung und schulärztliche Untersuchung einholen, Beurteilung der Kindergartenlehrperson beiziehen.';
+  } else if (vorzeitig) {
+    empfehlung = 'Vertiefte Abklärung nötig';
+    begruendung = 'Ein vorzeitiger Eintritt liegt vor dem Stichtag und ist nur bei nachgewiesener Schulreife möglich.';
+    abklaerung = 'Schulpsychologische Abklärung zur Schulreife einholen, Einschätzung des Kindergartens beiziehen.';
+  }
+
+  const meta = `<p class="ai-meta"><strong>Kind:</strong> ${kind} &nbsp;·&nbsp; <strong>Geburtsdatum:</strong> ${geburt} &nbsp;·&nbsp; <strong>Schulkreis:</strong> ${schulkreis}</p>`;
+  return {
+    recommendedLevel: empfehlung,
+    summary:
+      `<p>Schuleintritt <strong>${kind}</strong> per Schuljahr ${jahr}, Antrag der Eltern: <strong>${antrag}</strong>.</p>` +
+      `<p>${begruendung}</p>` +
+      `<ul>` +
+      `<li><strong>Vorschlag:</strong> ${empfehlung}</li>` +
+      `<li><strong>Nächster Schritt:</strong> ${abklaerung}</li>` +
+      `</ul>` +
+      `<p><strong>Empfehlung: ${empfehlung}.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Formelle Prüfung</h4><ul>` +
+      `<li>Stichtag: massgebend ist der 31.07. des Eintrittsjahres</li>` +
+      `<li>Schulkreis: ${schulkreis}, Zuteilung nach Wohnadresse</li>` +
+      `<li>Antrag der Eltern: ${antrag}</li></ul>` +
+      `<h4>2. Materielle Beurteilung</h4><p>${begruendung}</p>` +
+      `<h4>3. Empfohlenes Vorgehen</h4><ul><li>${abklaerung}</li>` +
+      `<li>Standortgespräch mit den Eltern führen, bevor der Antrag an die Kommission geht</li>` +
+      `<li>bei Abweichung vom Elternantrag Rechtsmittelbelehrung in die Verfügung aufnehmen</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> <strong>${empfehlung}</strong>. Der Entscheid obliegt der Bildungskommission, diese Beurteilung ist eine Entscheidgrundlage.</p>`,
+  };
+}
+
+// --- KI+ Förderbedarf-Screening -------------------------------------------
+// Liest den beobachteten Förderbedarf und die Vorgeschichte und schlägt eine
+// Massnahmenstufe samt zuständiger Fachstelle vor.
+function generateSonderpaedAssessment(proc: Process): GeneratedAssessment {
+  const kind = readInputValue(proc, 'Kind') || 'Kind unbekannt';
+  const klasse = readInputValue(proc, 'Klasse') || 'unbekannt';
+  const bedarf = readInputValue(proc, 'Beobachteter Förderbedarf') || '';
+  const vorher = readInputValue(proc, 'Bisherige Massnahmen') || 'keine dokumentiert';
+  const einverstaendnis = readInputValue(proc, 'Einverständnis Erziehungsberechtigte') || 'Ausstehend';
+  const t = bedarf.toLowerCase();
+
+  const sprache = /sprach|logop|lesen|schreiben|artikul|stotter|wortschatz/.test(t);
+  const verhalten = /verhalten|aggress|konzentr|adhs|aufmerksam|rückzug|sozial/.test(t);
+  const schwer = /autis|behinder|kognitiv|geistig|mehrfach|schwer/.test(t);
+
+  let stufe = 'Niederschwellige Förderung (schulintern)';
+  let fachstelle = 'Schulinterne Förderung, Klassenteam';
+  let begruendung = 'Der beschriebene Bedarf lässt sich voraussichtlich schulintern auffangen.';
+  if (schwer) {
+    stufe = 'Verstärkte Massnahme (Sonderschulung)';
+    fachstelle = 'Schulpsychologischer Dienst, Abklärung nach standardisiertem Verfahren';
+    begruendung = 'Die Hinweise deuten auf einen umfassenden, länger dauernden Bedarf. Das ruft nach einer verstärkten Massnahme mit Kostengutsprache.';
+  } else if (sprache && verhalten) {
+    stufe = 'Integrative Förderung (IF)';
+    fachstelle = 'Schulpsychologischer Dienst und Logopädischer Dienst';
+    begruendung = 'Es liegen Hinweise auf mehrere Förderbereiche vor. Eine integrative Förderung mit logopädischem Anteil ist angezeigt.';
+  } else if (sprache) {
+    stufe = 'Logopädische Therapie';
+    fachstelle = 'Logopädischer Dienst, ergänzend Schulpsychologie';
+    begruendung = 'Die Beobachtungen betreffen den Bereich Sprache, Lesen und Schreiben. Eine logopädische Abklärung ist der richtige Einstieg.';
+  } else if (verhalten) {
+    stufe = 'Integrative Förderung (IF)';
+    fachstelle = 'Schulpsychologischer Dienst';
+    begruendung = 'Die Beobachtungen betreffen Verhalten und Aufmerksamkeit. Eine schulpsychologische Abklärung ist angezeigt.';
+  }
+
+  const vorherWirkungslos = /ohne wirkung|ohne ausreichende|kein formeller|erfolglos/.test(vorher.toLowerCase());
+  const eskalation = vorherWirkungslos
+    ? 'Die bisherige schulinterne Förderung hat nicht ausreichend gewirkt, eine formelle Massnahme ist damit begründet.'
+    : 'Vor einer formellen Massnahme ist zu belegen, dass die schulinternen Möglichkeiten ausgeschöpft sind.';
+  const hinweisEinverstaendnis = einverstaendnis === 'Liegt vor'
+    ? 'Das Einverständnis der Erziehungsberechtigten liegt vor, die Abklärung kann starten.'
+    : 'Ohne Einverständnis der Erziehungsberechtigten darf keine Abklärung durchgeführt werden.';
+
+  const meta = `<p class="ai-meta"><strong>Kind:</strong> ${kind} &nbsp;·&nbsp; <strong>Klasse:</strong> ${klasse} &nbsp;·&nbsp; <strong>Einverständnis:</strong> ${einverstaendnis}</p>`;
+  return {
+    recommendedLevel: stufe,
+    summary:
+      `<p>Antrag für <strong>${kind}</strong> (${klasse}).</p>` +
+      `<p>${begruendung}</p>` +
+      `<ul>` +
+      `<li><strong>Vorschlag Massnahmenstufe:</strong> ${stufe}</li>` +
+      `<li><strong>Zuständige Fachstelle:</strong> ${fachstelle}</li>` +
+      `</ul>` +
+      `<p><strong>Empfehlung: ${stufe}.</strong></p>`,
+    detail:
+      meta +
+      `<h4>1. Beobachteter Förderbedarf</h4><p>${bedarf || 'Keine Angaben im Antrag.'}</p>` +
+      `<h4>2. Vorgeschichte</h4><p>${vorher}</p><p>${eskalation}</p>` +
+      `<h4>3. Vorschlag</h4><ul>` +
+      `<li><strong>Massnahmenstufe:</strong> ${stufe}</li>` +
+      `<li><strong>Abklärung durch:</strong> ${fachstelle}</li>` +
+      `<li>${hinweisEinverstaendnis}</li></ul>` +
+      `<h4>4. Hinweise zum Verfahren</h4><ul>` +
+      `<li>Förderziele im schulischen Standortgespräch nach ICF festlegen</li>` +
+      `<li>Massnahme befristen und nach einem Schuljahr überprüfen</li>` +
+      `<li>bei einer verstärkten Massnahme Kostengutsprache des Kantons einholen</li></ul>` +
+      `<p><strong>Gesamtbeurteilung:</strong> <strong>${stufe}</strong> vorgeschlagen. Der Entscheid obliegt der Bildungskommission, diese Beurteilung ist eine Entscheidgrundlage.</p>`,
+  };
+}
+
 // Registry of KI+ assessment actions: action id -> assistant, the decision the
 // user makes afterwards, and the generator that produces the recommendation.
 // AI actions NOT listed here (document drafts, summaries) keep the plain button.
@@ -468,6 +601,8 @@ const ASSESSMENT_ACTIONS: Record<string, AssessmentConfig> = {
   'gr-a2': { assistantName: 'KI+ Ressort-Triage', decisionLabel: 'Zuständiges Ressort', generate: generateTriageAssessment },
   'kes-a2': { assistantName: 'KI+ Gefährdungs-Screening', decisionLabel: 'Dringlichkeitsstufe', generate: generateKesbScreening },
   'ae-a2': { assistantName: 'KI+ Datenschutz-Check', decisionLabel: 'Berechtigungsstatus', generate: generateDatenschutzCheck },
+  'se-a2': { assistantName: 'KI+ Einschulungs-Screening', decisionLabel: 'Einschulungsempfehlung', generate: generateEinschulungAssessment },
+  'sp-a2': { assistantName: 'KI+ Förderbedarf-Screening', decisionLabel: 'Empfohlene Massnahmenstufe', generate: generateSonderpaedAssessment },
 };
 
 export interface LinkedDocument {
@@ -1423,21 +1558,25 @@ export class ProcessService {
 // CONTEXT OBJECTS
 // ============================================================
 
-const CTX_BAUGESUCH: ContextObject = { id: '1', type: 'geschaeft', number: '2024-0009', title: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)' };
-const CTX_AKTENEINSICHT: ContextObject = { id: '2', type: 'geschaeft', number: '2025-0042', title: 'Akteneinsicht Verkehrsplanung Dorfzentrum' };
-const CTX_EINBUERGERUNG: ContextObject = { id: '3', type: 'geschaeft', number: '2025-0018', title: 'Einbürgerungsgesuch Rossi Marco' };
-const CTX_GEMEINDERAT: ContextObject = { id: '4', type: 'geschaeft', number: '2025-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse' };
-const CTX_VERANSTALTUNG: ContextObject = { id: '5', type: 'geschaeft', number: '2025-0071', title: 'Dorffest Sommer 2025' };
-const CTX_KESB: ContextObject = { id: '6', type: 'geschaeft', number: '2025-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider' };
+const CTX_BAUGESUCH: ContextObject = { id: '1', type: 'geschaeft', number: '2026-0009', title: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)' };
+const CTX_AKTENEINSICHT: ContextObject = { id: '2', type: 'geschaeft', number: '2026-0042', title: 'Akteneinsicht Verkehrsplanung Dorfzentrum' };
+const CTX_EINBUERGERUNG: ContextObject = { id: '3', type: 'geschaeft', number: '2026-0018', title: 'Einbürgerungsgesuch Rossi Marco' };
+const CTX_GEMEINDERAT: ContextObject = { id: '4', type: 'geschaeft', number: '2026-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse' };
+const CTX_VERANSTALTUNG: ContextObject = { id: '5', type: 'geschaeft', number: '2026-0071', title: 'Dorffest Sommer 2027' };
+const CTX_KESB: ContextObject = { id: '6', type: 'geschaeft', number: '2026-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider' };
+const CTX_SCHULEINTRITT: ContextObject = { id: '7', type: 'geschaeft', number: '2026-0088', title: 'Schuleintritt Ademi Elira (Schuljahr 2027/28)' };
+const CTX_SONDERPAED: ContextObject = { id: '8', type: 'geschaeft', number: '2026-0094', title: 'Sonderpädagogische Massnahme Bucher Tim (3. Klasse)' };
 
 // Sitzungen — steps from different processes can link here
-const CTX_SITZUNG_GR: ContextObject = { id: 'sitz-gr-1', type: 'sitzung', number: 'GR-2025-04', title: 'Gemeinderatssitzung 15.04.2025', icon: 'event' };
-const CTX_SITZUNG_GV: ContextObject = { id: 'sitz-gv-1', type: 'sitzung', number: 'GV-2025-06', title: 'Gemeindeversammlung 20.06.2025', icon: 'event' };
-const CTX_SITZUNG_KESB: ContextObject = { id: 'sitz-kesb-1', type: 'sitzung', number: 'KESB-2025-12', title: 'KESB-Sitzung 28.03.2025', icon: 'event' };
+const CTX_SITZUNG_GR: ContextObject = { id: 'sitz-gr-1', type: 'sitzung', number: 'GR-2026-10', title: 'Gemeinderatssitzung 15.10.2026', icon: 'event' };
+const CTX_SITZUNG_GV: ContextObject = { id: 'sitz-gv-1', type: 'sitzung', number: 'GV-2027-06', title: 'Gemeindeversammlung 18.06.2027', icon: 'event' };
+const CTX_SITZUNG_KESB: ContextObject = { id: 'sitz-kesb-1', type: 'sitzung', number: 'KESB-2026-16', title: 'KESB-Sitzung 17.11.2026', icon: 'event' };
+const CTX_SITZUNG_BK: ContextObject = { id: 'sitz-bk-1', type: 'sitzung', number: 'BK-2026-05', title: 'Bildungskommission 21.10.2026', icon: 'event' };
 
 const ALL_CONTEXT_OBJECTS: ContextObject[] = [
   CTX_BAUGESUCH, CTX_AKTENEINSICHT, CTX_EINBUERGERUNG, CTX_GEMEINDERAT, CTX_VERANSTALTUNG, CTX_KESB,
-  CTX_SITZUNG_GR, CTX_SITZUNG_GV, CTX_SITZUNG_KESB,
+  CTX_SCHULEINTRITT, CTX_SONDERPAED,
+  CTX_SITZUNG_GR, CTX_SITZUNG_GV, CTX_SITZUNG_KESB, CTX_SITZUNG_BK,
 ];
 
 // ============================================================
@@ -1454,7 +1593,7 @@ const PROCESS_BAUGESUCH: Process = {
   processOwner: { name: 'Oberholzer Martin', role: 'Bauverwalter', email: 'm.oberholzer@gemeinde.ch' },
   steps: [
     {
-      id: '1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '21.02.2024',
+      id: '1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '21.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Müller Sarah, Gesuchsteller', category: 'Baugesuch',
       contextLinks: [G('1')],
@@ -1466,7 +1605,7 @@ const PROCESS_BAUGESUCH: Process = {
       inputs: [
         { id: 'i1', type: 'field', label: 'Gesuchsteller', value: 'Müller Sarah', required: true, fieldType: 'text', thematicGroup: 'Beteiligte' },
         { id: 'i2', type: 'field', label: 'Parzelle', value: '1234', required: true, fieldType: 'text', thematicGroup: 'Grundstück' },
-        { id: 'i3', type: 'document', label: 'Baugesuchsformular', required: true, documentName: 'Baugesuch_2024.pdf', uploaded: true },
+        { id: 'i3', type: 'document', label: 'Baugesuchsformular', required: true, documentName: 'Baugesuch_2026.pdf', uploaded: true },
         { id: 'i4', type: 'document', label: 'Situationsplan', required: true, documentName: 'Situationsplan.pdf', uploaded: true },
       ],
       actions: [{ id: 'a1', label: 'Eingangsbestätigung senden', type: 'standard', description: 'Automatische E-Mail an Gesuchsteller' }],
@@ -1477,7 +1616,7 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [],
     },
     {
-      id: '2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '28.02.2024',
+      id: '2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '28.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Baugesuch',
       contextLinks: [G('1')],
@@ -1493,13 +1632,13 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [{ id: 'co1', condition: 'Prüfresultat == "Unvollständig"', thenAction: 'Schritt "Nachforderung" einfügen', elseAction: 'Weiter zu Öffentliche Auflage' }],
     },
     {
-      id: '3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '15.03.2024',
+      id: '3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '15.07.2026',
       kind: 'step', stepType: 'subprocess',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       subSteps: [
-        { id: '3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '15.03.2024', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-        { id: '3b', number: '6855.2', title: 'Auflage durchführen (30 Tage)', status: 'completed', completedDate: '14.04.2024', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-        { id: '3c', number: '6855.3', title: 'Einsprachen sammeln & prüfen', status: 'completed', completedDate: '15.04.2024', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: '3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '15.07.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: '3b', number: '6855.2', title: 'Auflage durchführen (30 Tage)', status: 'completed', completedDate: '14.08.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: '3c', number: '6855.3', title: 'Einsprachen sammeln & prüfen', status: 'completed', completedDate: '15.08.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
       ],
       contextLinks: [G('1')],
       tasks: [
@@ -1508,7 +1647,7 @@ const PROCESS_BAUGESUCH: Process = {
         { id: 't8', title: 'Einsprachen sammeln', assignee: 'Oberholzer Martin', status: 'done' },
       ],
       inputs: [
-        { id: 'i6', type: 'field', label: 'Publikationsdatum', value: '15.03.2024', required: true, fieldType: 'date', thematicGroup: 'Verfahren' },
+        { id: 'i6', type: 'field', label: 'Publikationsdatum', value: '15.07.2026', required: true, fieldType: 'date', thematicGroup: 'Verfahren' },
         { id: 'i7', type: 'field', label: 'Anzahl Einsprachen', value: '0', required: false, fieldType: 'number', thematicGroup: 'Verfahren' },
       ],
       actions: [],
@@ -1516,13 +1655,13 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [{ id: 'co2', condition: 'Anzahl Einsprachen > 0', thenAction: 'Schritt "Einspracheverfahren" einfügen' }],
     },
     {
-      id: '4', number: '6900', title: 'Fachberichte einholen', status: 'completed', completedDate: '20.04.2024',
+      id: '4', number: '6900', title: 'Fachberichte einholen', status: 'completed', completedDate: '20.08.2026',
       kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       parallelPaths: [
-        [{ id: '4a', number: '6900.1', title: 'Brandschutz-Bericht', status: 'completed', completedDate: '10.04.2024', responsible: 'Feuerpolizei', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: '4b', number: '6900.2', title: 'Statik-Bericht', status: 'completed', completedDate: '15.04.2024', responsible: 'Muster Ingenieure AG', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: '4c', number: '6900.3', title: 'Energienachweis', status: 'completed', completedDate: '18.04.2024', responsible: 'Energieberatung', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: '4a', number: '6900.1', title: 'Brandschutz-Bericht', status: 'completed', completedDate: '10.08.2026', responsible: 'Feuerpolizei', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: '4b', number: '6900.2', title: 'Statik-Bericht', status: 'completed', completedDate: '15.08.2026', responsible: 'Muster Ingenieure AG', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: '4c', number: '6900.3', title: 'Energienachweis', status: 'completed', completedDate: '18.08.2026', responsible: 'Energieberatung', category: 'Bewilligungsverfahren', contextLinks: [G('1')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
       ],
       contextLinks: [G('1')],
       tasks: [
@@ -1546,7 +1685,7 @@ const PROCESS_BAUGESUCH: Process = {
       conditionals: [],
     },
     {
-      id: '5', number: '6781', title: 'Baubewilligung prüfen', status: 'in-progress', dueDate: '15.08.2025',
+      id: '5', number: '6781', title: 'Baubewilligung prüfen', status: 'in-progress', dueDate: '30.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       contextLinks: [G('1')],
@@ -1582,7 +1721,7 @@ const PROCESS_BAUGESUCH: Process = {
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: '6', number: '7010', title: 'Bewilligung versenden', status: 'pending', dueDate: '15.08.2025',
+      id: '6', number: '7010', title: 'Bewilligung versenden', status: 'pending', dueDate: '30.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       contextLinks: [G('1')],
@@ -1675,7 +1814,7 @@ const PROCESS_AKTENEINSICHT: Process = {
   processOwner: { name: 'Weber Claudia', role: 'Kanzlei', email: 'c.weber@gemeinde.ch' },
   steps: [
     {
-      id: 'ae-1', number: '1001', title: 'Antrag eingegangen', status: 'completed', completedDate: '10.03.2025',
+      id: 'ae-1', number: '1001', title: 'Antrag eingegangen', status: 'completed', completedDate: '10.08.2026',
       kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Akteneinsicht',
       contextLinks: [G('2')],
@@ -1685,14 +1824,14 @@ const PROCESS_AKTENEINSICHT: Process = {
       ],
       inputs: [
         { id: 'ae-i1', type: 'field', label: 'Antragsteller', value: 'Keller Thomas', required: true, fieldType: 'text', thematicGroup: 'Antragsteller' },
-        { id: 'ae-i2', type: 'field', label: 'Betroffenes Dossier', value: 'Verkehrsplanung Dorfzentrum 2024', required: true, fieldType: 'text', thematicGroup: 'Gegenstand' },
+        { id: 'ae-i2', type: 'field', label: 'Betroffenes Dossier', value: 'Verkehrsplanung Dorfzentrum 2025', required: true, fieldType: 'text', thematicGroup: 'Gegenstand' },
       ],
       actions: [{ id: 'ae-a1', label: 'Eingangsbestätigung via Portal', type: 'standard', description: 'Automatische Bestätigung im CMI Portal' }],
       completionCriteria: [{ id: 'ae-c1', description: 'Antrag registriert', met: true }],
       conditionals: [],
     },
     {
-      id: 'ae-2', number: '1002', title: 'Vorprüfung des Antrags', status: 'completed', completedDate: '11.03.2025',
+      id: 'ae-2', number: '1002', title: 'Vorprüfung des Antrags', status: 'completed', completedDate: '11.08.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
@@ -1708,7 +1847,7 @@ const PROCESS_AKTENEINSICHT: Process = {
       conditionals: [{ id: 'ae-co1', condition: 'Berechtigungsstatus == "Nicht berechtigt"', thenAction: 'Antrag ablehnen und Bescheid senden' }],
     },
     {
-      id: 'ae-3', number: '1003', title: 'Identitätsprüfung', status: 'in-progress', dueDate: '20.03.2025',
+      id: 'ae-3', number: '1003', title: 'Identitätsprüfung', status: 'in-progress', dueDate: '15.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Weber Claudia, Kanzlei', category: 'Akteneinsicht',
       contextLinks: [G('2')],
@@ -1787,7 +1926,7 @@ const PROCESS_EINBUERGERUNG: Process = {
   processOwner: { name: 'Huber Peter', role: 'Einwohnerdienste', email: 'p.huber@gemeinde.ch' },
   steps: [
     {
-      id: 'eb-1', number: '2001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '15.01.2025',
+      id: 'eb-1', number: '2001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '15.06.2026',
       kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Einbürgerung',
       contextLinks: [G('3')],
@@ -1804,7 +1943,7 @@ const PROCESS_EINBUERGERUNG: Process = {
       conditionals: [],
     },
     {
-      id: 'eb-2', number: '2002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '18.01.2025',
+      id: 'eb-2', number: '2002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '18.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
@@ -1822,7 +1961,7 @@ const PROCESS_EINBUERGERUNG: Process = {
       conditionals: [],
     },
     {
-      id: 'eb-3', number: '2003', title: 'Abklärung Wohnsitzdauer', status: 'completed', completedDate: '20.01.2025',
+      id: 'eb-3', number: '2003', title: 'Abklärung Wohnsitzdauer', status: 'completed', completedDate: '20.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       contextLinks: [G('3')],
@@ -1836,7 +1975,7 @@ const PROCESS_EINBUERGERUNG: Process = {
       conditionals: [{ id: 'eb-co1', condition: 'Mindestdauer erfüllt == "Nein"', thenAction: 'Gesuch ablehnen' }],
     },
     {
-      id: 'eb-4', number: '2004', title: 'Sprachprüfung / Integration', status: 'in-progress', dueDate: '28.02.2025',
+      id: 'eb-4', number: '2004', title: 'Sprachprüfung / Integration', status: 'in-progress', dueDate: '18.09.2026',
       kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Huber Peter, Einwohnerdienste', category: 'Einbürgerung',
       parallelPaths: [
@@ -1950,7 +2089,7 @@ const PROCESS_GEMEINDERAT: Process = {
   processOwner: { name: 'Schmid Andrea', role: 'Gemeindeschreiberin', email: 'a.schmid@gemeinde.ch' },
   steps: [
     {
-      id: 'gr-1', number: '3001', title: 'Anfrage eingegangen', status: 'completed', completedDate: '01.03.2025',
+      id: 'gr-1', number: '3001', title: 'Anfrage eingegangen', status: 'completed', completedDate: '01.08.2026',
       kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Gemeinderat',
       contextLinks: [G('4')],
@@ -1967,7 +2106,7 @@ const PROCESS_GEMEINDERAT: Process = {
       conditionals: [],
     },
     {
-      id: 'gr-2', number: '3002', title: 'Vorprüfung & Triage', status: 'completed', completedDate: '03.03.2025',
+      id: 'gr-2', number: '3002', title: 'Vorprüfung & Triage', status: 'completed', completedDate: '03.08.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Schmid Andrea, Gemeindeschreiberin', category: 'Gemeinderat',
       contextLinks: [G('4')],
@@ -1983,7 +2122,7 @@ const PROCESS_GEMEINDERAT: Process = {
       conditionals: [],
     },
     {
-      id: 'gr-3', number: '3003', title: 'Zuständiges Ressort zuweisen', status: 'in-progress', dueDate: '15.03.2025',
+      id: 'gr-3', number: '3003', title: 'Zuständiges Ressort zuweisen', status: 'in-progress', dueDate: '10.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Meier Hans, Gemeinderat Verkehr', category: 'Gemeinderat',
       contextLinks: [G('4')],
@@ -2093,7 +2232,7 @@ const PROCESS_VERANSTALTUNG: Process = {
   processOwner: { name: 'Frei Barbara', role: 'Gemeindekanzlei', email: 'b.frei@gemeinde.ch' },
   steps: [
     {
-      id: 'va-1', number: '4001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '20.02.2025',
+      id: 'va-1', number: '4001', title: 'Gesuch eingegangen', status: 'completed', completedDate: '20.07.2026',
       kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'Veranstaltung',
       contextLinks: [G('5')],
@@ -2103,8 +2242,8 @@ const PROCESS_VERANSTALTUNG: Process = {
       ],
       inputs: [
         { id: 'va-i1', type: 'field', label: 'Veranstalter', value: 'Turnverein Dorfname', required: true, fieldType: 'text', thematicGroup: 'Veranstalter' },
-        { id: 'va-i2', type: 'field', label: 'Veranstaltung', value: 'Dorffest Sommer 2025', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
-        { id: 'va-i3', type: 'field', label: 'Datum', value: '21.06.2025 bis 22.06.2025', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
+        { id: 'va-i2', type: 'field', label: 'Veranstaltung', value: 'Dorffest Sommer 2027', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
+        { id: 'va-i3', type: 'field', label: 'Datum', value: '19.06.2027 bis 20.06.2027', required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
         { id: 'va-i-besucher', type: 'field', label: 'Erwartete Besucherzahl', value: "2'500", required: true, fieldType: 'text', thematicGroup: 'Veranstaltung' },
       ],
       actions: [{ id: 'va-a1', label: 'Eingangsbestätigung', type: 'standard', description: 'Portal-Bestätigung' }],
@@ -2112,7 +2251,7 @@ const PROCESS_VERANSTALTUNG: Process = {
       conditionals: [],
     },
     {
-      id: 'va-2', number: '4002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '22.02.2025',
+      id: 'va-2', number: '4002', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '22.07.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
@@ -2130,7 +2269,7 @@ const PROCESS_VERANSTALTUNG: Process = {
       conditionals: [],
     },
     {
-      id: 'va-3', number: '4003', title: 'Risikobeurteilung', status: 'completed', completedDate: '28.02.2025',
+      id: 'va-3', number: '4003', title: 'Risikobeurteilung', status: 'completed', completedDate: '28.07.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       contextLinks: [G('5')],
@@ -2146,12 +2285,12 @@ const PROCESS_VERANSTALTUNG: Process = {
       conditionals: [{ id: 'va-co1', condition: 'Risikostufe == "Hoch"', thenAction: 'Zusätzliche Sicherheitsauflagen und Polizeieinsatz' }],
     },
     {
-      id: 'va-4', number: '4004', title: 'Fachstellen-Vernehmlassung', status: 'in-progress', dueDate: '20.03.2025',
+      id: 'va-4', number: '4004', title: 'Fachstellen-Vernehmlassung', status: 'in-progress', dueDate: '22.09.2026',
       kind: 'gateway', gatewayType: 'parallel',
       responsible: 'Frei Barbara, Gemeindekanzlei', category: 'Veranstaltung',
       parallelPathLabels: ['Feuerpolizei', 'Kantonspolizei', 'Lebensmittelkontrolle', 'Lärmschutz'],
       parallelPaths: [
-        [{ id: 'va-4a', number: '4004.1', title: 'Feuerpolizei', status: 'completed', completedDate: '05.03.2025', responsible: 'Feuerpolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'va-4a', number: '4004.1', title: 'Feuerpolizei', status: 'completed', completedDate: '05.08.2026', responsible: 'Feuerpolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'va-4b', number: '4004.2', title: 'Kantonspolizei', status: 'in-progress', responsible: 'Kantonspolizei', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'va-4c', number: '4004.3', title: 'Lebensmittelkontrolle', status: 'pending', responsible: 'Lebensmittelbehörde', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
         [{ id: 'va-4d', number: '4004.4', title: 'Lärmschutz', status: 'pending', responsible: 'Umweltamt', category: 'Veranstaltung', contextLinks: [G('5')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
@@ -2253,7 +2392,7 @@ const PROCESS_KESB: Process = {
   processOwner: { name: 'Dr. Gerber Nicole', role: 'KESB-Präsidentin', email: 'n.gerber@kesb.ch' },
   steps: [
     {
-      id: 'kes-1', number: '5001', title: 'Gefahrenmeldung eingegangen', status: 'completed', completedDate: '05.03.2025',
+      id: 'kes-1', number: '5001', title: 'Gefahrenmeldung eingegangen', status: 'completed', completedDate: '05.08.2026',
       kind: 'step', stepType: 'activity', activityKind: 'notification',
       responsible: 'System (Portal)', category: 'KESB',
       contextLinks: [G('6')],
@@ -2271,7 +2410,7 @@ const PROCESS_KESB: Process = {
       conditionals: [],
     },
     {
-      id: 'kes-2', number: '5002', title: 'Dringlichkeitsprüfung', status: 'completed', completedDate: '05.03.2025',
+      id: 'kes-2', number: '5002', title: 'Dringlichkeitsprüfung', status: 'completed', completedDate: '05.08.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
@@ -2288,7 +2427,7 @@ const PROCESS_KESB: Process = {
       conditionals: [{ id: 'kes-co1', condition: 'Dringlichkeitsstufe == "Sofort"', thenAction: 'Superprovisorische Massnahme einleiten' }],
     },
     {
-      id: 'kes-3', number: '5003', title: 'Abklärungsauftrag erteilen', status: 'in-progress', dueDate: '15.03.2025',
+      id: 'kes-3', number: '5003', title: 'Abklärungsauftrag erteilen', status: 'in-progress', dueDate: '08.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Dr. Gerber Nicole, KESB-Präsidentin', category: 'KESB',
       contextLinks: [G('6')],
@@ -2422,24 +2561,438 @@ const PROCESS_KESB: Process = {
 // WORKFLOW INSTANCES — demo instances for stakeholder presentation
 // ============================================================
 
+// Schulverwaltung 1: Schuleintritt. Regelfall ist der Eintritt per Stichtag;
+// hier beantragen die Eltern eine Rückstellung, deshalb Schulreifeabklärung
+// (parallel), Standortgespräch (Subprozess) und Entscheid der Bildungskommission.
+const PROCESS_SCHULEINTRITT: Process = {
+  id: 'proc-se',
+  title: 'Schuleintrittsverfahren',
+  processOwner: { name: 'Meier Sandra', role: 'Leiterin Schulverwaltung', email: 's.meier@schule-dorf.ch' },
+  steps: [
+    {
+      id: 'se-1', number: '6001', title: 'Anmeldung Schuleintritt eingegangen', status: 'completed', completedDate: '03.08.2026',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
+      responsible: 'System (Portal)', category: 'Schuleintritt',
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t1', title: 'Portal-Formular validieren', assignee: 'System', status: 'done' },
+        { id: 'se-t2', title: 'Eingangsbestätigung an Eltern senden', assignee: 'System', status: 'done' },
+        { id: 'se-t3', title: 'Geschäft eröffnen', assignee: 'System', status: 'done' },
+      ],
+      inputs: [
+        { id: 'se-i1', type: 'field', label: 'Kind', value: 'Ademi Elira', required: true, fieldType: 'text', thematicGroup: 'Kind' },
+        { id: 'se-i2', type: 'field', label: 'Geburtsdatum', value: '14.06.2021', required: true, fieldType: 'date', thematicGroup: 'Kind' },
+        { id: 'se-i3', type: 'field', label: 'Eintritt per Schuljahr', value: '2027/28', required: true, fieldType: 'text', thematicGroup: 'Kind' },
+        { id: 'se-i4', type: 'field', label: 'Erziehungsberechtigte', value: 'Ademi Fatime und Ademi Burim', required: true, fieldType: 'text', thematicGroup: 'Beteiligte' },
+        { id: 'se-i5', type: 'field', label: 'Schulkreis (Wohnadresse)', value: 'Dorf-Ost', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
+        { id: 'se-i6', type: 'field', label: 'Antrag der Eltern', value: 'Rückstellung um ein Jahr', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt'], thematicGroup: 'Antrag' },
+        { id: 'se-i7', type: 'document', label: 'Anmeldeformular', required: true, documentName: 'Anmeldung_Schuleintritt_Ademi.pdf', uploaded: true },
+      ],
+      actions: [{ id: 'se-a1', label: 'Eingangsbestätigung senden', type: 'standard', description: 'Stellt die Bestätigung im CMI Portal bereit' }],
+      completionCriteria: [{ id: 'se-c1', description: 'Anmeldung erfasst und Geschäft eröffnet', met: true }],
+      conditionals: [],
+    },
+    {
+      id: 'se-2', number: '6002', title: 'Vollständigkeitsprüfung & Registerabgleich', status: 'completed', completedDate: '12.08.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t4', title: 'Unterlagen auf Vollständigkeit prüfen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'se-t5', title: 'Abgleich mit Einwohnerregister', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'se-t6', title: 'Bericht der Kindergartenlehrperson anfordern', assignee: 'Meier Sandra', status: 'done' },
+      ],
+      inputs: [
+        { id: 'se-i8', type: 'field', label: 'Unterlagen vollständig', value: 'Ja', required: true, fieldType: 'select', options: ['Ja', 'Nein'], thematicGroup: 'Prüfung' },
+        { id: 'se-i9', type: 'field', label: 'Einschulungsempfehlung', value: 'Vertiefte Abklärung nötig', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt', 'Vertiefte Abklärung nötig'], thematicGroup: 'Prüfung' },
+        { id: 'se-i10', type: 'document', label: 'Bericht Kindergarten', required: true, documentName: 'Bericht_KG_Ademi.pdf', uploaded: true },
+      ],
+      actions: [{ id: 'se-a2', label: 'Einschulungs-Screening', type: 'ai', description: 'KI-gestützte Vorbeurteilung von Stichtag, Schulkreis und Entwicklungshinweisen' }],
+      completionCriteria: [{ id: 'se-c2', description: 'Unterlagen vollständig und Register abgeglichen', met: true }],
+      conditionals: [{ id: 'se-co1', condition: 'Unterlagen vollständig == "Nein"', thenAction: 'Nachforderung über Portal auslösen' }],
+    },
+    {
+      id: 'se-3', number: '6003', title: 'Stichtagsprüfung & Schulkreiszuteilung', status: 'completed', completedDate: '19.08.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t7', title: 'Stichtag 31.07. prüfen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'se-t8', title: 'Schuleinheit zuteilen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'se-t9', title: 'Klassenbestand im Jahrgang prüfen', assignee: 'Meier Sandra', status: 'done' },
+      ],
+      inputs: [
+        { id: 'se-i11', type: 'field', label: 'Stichtag erfüllt', value: 'Ja (geb. 14.06.2021, Stichtag 31.07.2021)', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
+        { id: 'se-i12', type: 'field', label: 'Zugeteilte Schuleinheit', value: 'Primarschule Dorf-Ost', required: true, fieldType: 'text', thematicGroup: 'Zuteilung' },
+        { id: 'se-i13', type: 'field', label: 'Freie Plätze im Jahrgang', value: '4', required: false, fieldType: 'number', thematicGroup: 'Zuteilung' },
+      ],
+      actions: [],
+      completionCriteria: [{ id: 'se-c3', description: 'Stichtag geprüft und Schuleinheit zugeteilt', met: true }],
+      conditionals: [],
+    },
+    {
+      id: 'se-4', number: '6004', title: 'Schulreifeabklärung', status: 'in-progress', dueDate: '24.09.2026',
+      kind: 'gateway', gatewayType: 'parallel',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
+      parallelPathLabels: ['Kindergarten', 'Schulpsychologischer Dienst', 'Schulärztlicher Dienst'],
+      parallelPaths: [
+        [{ id: 'se-4a', number: '6004.1', title: 'Beurteilung Kindergartenlehrperson', status: 'completed', completedDate: '10.08.2026', responsible: 'Kindergarten Dorf-Ost', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'se-4b', number: '6004.2', title: 'Schulpsychologische Abklärung', status: 'in-progress', responsible: 'Schulpsychologischer Dienst', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'se-4c', number: '6004.3', title: 'Schulärztliche Untersuchung', status: 'pending', responsible: 'Schulärztlicher Dienst', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ],
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t10', title: 'Einverständnis der Eltern einholen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'se-t11', title: 'Abklärung beim SPD beauftragen', assignee: 'Meier Sandra', status: 'in-progress' },
+        { id: 'se-t12', title: 'Termin schulärztliche Untersuchung vereinbaren', assignee: 'Meier Sandra', status: 'open' },
+      ],
+      inputs: [
+        { id: 'se-i14', type: 'document', label: 'Einverständniserklärung Eltern', required: true, documentName: 'Einverstaendnis_SPD_Ademi.pdf', uploaded: true },
+        { id: 'se-i15', type: 'document', label: 'SPD-Bericht', required: true, uploaded: false },
+        { id: 'se-i16', type: 'document', label: 'Schulärztlicher Bericht', required: true, uploaded: false },
+      ],
+      actions: [{ id: 'se-a3', label: 'Fachstellen erinnern', type: 'standard', description: 'Erinnerung an ausstehende Berichte' }],
+      completionCriteria: [{ id: 'se-c4', description: 'Alle Fachberichte liegen vor', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'se-5', number: '6005', title: 'Standortgespräch mit Eltern', status: 'pending',
+      kind: 'step', stepType: 'subprocess',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Schuleintritt',
+      subSteps: [
+        { id: 'se-5a', number: '6005.1', title: 'Gespräch terminieren und Eltern einladen', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'se-5b', number: '6005.2', title: 'Fachberichte gemeinsam besprechen', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'se-5c', number: '6005.3', title: 'Protokoll und Empfehlung festhalten', status: 'pending', responsible: 'Vogt Daniel', category: 'Schuleintritt', contextLinks: [G('7')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+      ],
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t13', title: 'Eltern zum Standortgespräch einladen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'se-t14', title: 'Fachberichte mit Eltern besprechen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'se-t15', title: 'Empfehlung protokollieren', assignee: 'Vogt Daniel', status: 'open' },
+      ],
+      inputs: [
+        { id: 'se-i17', type: 'document', label: 'Protokoll Standortgespräch', required: true, uploaded: false },
+        { id: 'se-i18', type: 'field', label: 'Haltung der Eltern', required: true, fieldType: 'textarea', thematicGroup: 'Standortgespräch' },
+      ],
+      actions: [],
+      completionCriteria: [{ id: 'se-c5', description: 'Standortgespräch durchgeführt und protokolliert', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'se-6', number: '6006', title: 'Antrag an Bildungskommission', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Schuleintritt',
+      contextLinks: [G('7'), S('sitz-bk-1')],  // Geschäft UND Sitzung der Bildungskommission
+      tasks: [
+        { id: 'se-t16', title: 'Antrag mit Begründung verfassen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'se-t17', title: 'Geschäft traktandieren', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'se-t18', title: 'Unterlagen der Kommission zustellen', assignee: 'Meier Sandra', status: 'open' },
+      ],
+      inputs: [
+        { id: 'se-i19', type: 'document', label: 'Antrag an Bildungskommission', required: true, uploaded: false },
+        { id: 'se-i20', type: 'field', label: 'Antrag Schulleitung', required: true, fieldType: 'select', options: ['Regeleintritt', 'Rückstellung um ein Jahr', 'Vorzeitiger Eintritt'], thematicGroup: 'Entscheid' },
+      ],
+      actions: [{ id: 'se-a4', label: 'Traktandum anmelden', type: 'standard', description: 'Meldet das Geschäft für die nächste Sitzung der Bildungskommission an' }],
+      completionCriteria: [{ id: 'se-c6', description: 'Antrag eingereicht und traktandiert', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'se-6-gw', number: '', title: 'Einschulungsentscheid', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Schuleintritt',
+      branches: [
+        { id: 'bse-1', label: 'Regeleintritt', condition: 'Entscheid == "Regeleintritt"', steps: [] },
+        { id: 'bse-2', label: 'Rückstellung um ein Jahr', condition: 'Entscheid == "Rückstellung um ein Jahr"', steps: [] },
+        { id: 'bse-3', label: 'Vorzeitiger Eintritt', condition: 'Entscheid == "Vorzeitiger Eintritt"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'se-7', number: '6007', title: 'Verfügung und Klassenzuteilung', status: 'pending',
+      kind: 'step', stepType: 'activity', activityKind: 'object-creation',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t19', title: 'Verfügung mit Rechtsmittelbelehrung erstellen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'se-t20', title: 'Verfügung den Eltern eröffnen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'se-t21', title: 'Klassenzuteilung vornehmen', assignee: 'Vogt Daniel', status: 'open' },
+      ],
+      inputs: [
+        { id: 'se-i21', type: 'document', label: 'Verfügung Schuleintritt', required: true, uploaded: false },
+        { id: 'se-i22', type: 'field', label: 'Zugeteilte Klasse', required: false, fieldType: 'text', thematicGroup: 'Zuteilung' },
+      ],
+      actions: [
+        { id: 'se-a5', label: 'Verfügung generieren', type: 'script', description: 'Erstellt die Verfügung als PDF' },
+        { id: 'se-a6', label: 'Im Portal bereitstellen', type: 'standard', description: 'Stellt die Verfügung im CMI Portal bereit' },
+      ],
+      completionCriteria: [{ id: 'se-c7', description: 'Verfügung eröffnet und Klasse zugeteilt', met: false }],
+      conditionals: [{ id: 'se-co2', condition: 'Entscheid weicht vom Elternantrag ab', thenAction: 'Rechtsmittelfrist von 30 Tagen abwarten, Vollzug zurückstellen' }],
+    },
+    {
+      id: 'se-8', number: '6008', title: 'Übertritt vollzogen, Verfahren abgeschlossen', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleintritt',
+      contextLinks: [G('7')],
+      tasks: [
+        { id: 'se-t22', title: 'Eintritt im Schuljahr 2027/28 bestätigen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'se-t23', title: 'Dossier archivieren', assignee: 'Sekretariat Schulverwaltung', status: 'open' },
+      ],
+      inputs: [], actions: [],
+      completionCriteria: [{ id: 'se-c8', description: 'Dossier archiviert', met: false }],
+      conditionals: [],
+    },
+  ],
+};
+
+// Schulverwaltung 2: sonderpädagogische Massnahme nach ICF-Logik. Abklärung als
+// Subprozess, Fachberichte parallel, Entscheid in der Bildungskommission,
+// danach jährliche Überprüfung mit Schleife zurück in die Massnahmenplanung.
+const PROCESS_SONDERPAED: Process = {
+  id: 'proc-sp',
+  title: 'Sonderpädagogisches Massnahmenverfahren',
+  processOwner: { name: 'Vogt Daniel', role: 'Schulleiter', email: 'd.vogt@schule-dorf.ch' },
+  steps: [
+    {
+      id: 'sp-1', number: '7001', title: 'Antrag auf sonderpädagogische Massnahme', status: 'completed', completedDate: '29.06.2026',
+      kind: 'step', stepType: 'activity', activityKind: 'notification',
+      responsible: 'System (Portal)', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t1', title: 'Portal-Formular validieren', assignee: 'System', status: 'done' },
+        { id: 'sp-t2', title: 'Einverständnis der Erziehungsberechtigten prüfen', assignee: 'System', status: 'done' },
+        { id: 'sp-t3', title: 'Geschäft eröffnen', assignee: 'System', status: 'done' },
+      ],
+      inputs: [
+        { id: 'sp-i1', type: 'field', label: 'Kind', value: 'Bucher Tim', required: true, fieldType: 'text', thematicGroup: 'Kind' },
+        { id: 'sp-i2', type: 'field', label: 'Geburtsdatum', value: '02.09.2017', required: true, fieldType: 'date', thematicGroup: 'Kind' },
+        { id: 'sp-i3', type: 'field', label: 'Klasse', value: '3a, Primarschule Dorf-Ost', required: true, fieldType: 'text', thematicGroup: 'Kind' },
+        { id: 'sp-i4', type: 'field', label: 'Antragstellende Person', value: 'Widmer Ruth, Klassenlehrperson', required: true, fieldType: 'text', thematicGroup: 'Beteiligte' },
+        { id: 'sp-i5', type: 'field', label: 'Einverständnis Erziehungsberechtigte', value: 'Liegt vor', required: true, fieldType: 'select', options: ['Liegt vor', 'Ausstehend', 'Verweigert'], thematicGroup: 'Beteiligte' },
+        { id: 'sp-i6', type: 'field', label: 'Beobachteter Förderbedarf', value: 'Anhaltende Schwierigkeiten im Lesen und Schreiben, Hinweise auf eine Sprachentwicklungsstörung', required: true, fieldType: 'textarea', thematicGroup: 'Förderbedarf' },
+        { id: 'sp-i7', type: 'document', label: 'Antragsformular', required: true, documentName: 'Antrag_SPM_Bucher.pdf', uploaded: true },
+      ],
+      actions: [{ id: 'sp-a1', label: 'Eingangsbestätigung senden', type: 'standard', description: 'Stellt die Bestätigung im CMI Portal bereit' }],
+      completionCriteria: [{ id: 'sp-c1', description: 'Antrag erfasst, Einverständnis geprüft', met: true }],
+      conditionals: [{ id: 'sp-co1', condition: 'Einverständnis Erziehungsberechtigte == "Verweigert"', thenAction: 'Verfahren nicht eröffnen, Eltern schriftlich informieren' }],
+    },
+    {
+      id: 'sp-2', number: '7002', title: 'Triage und Zuständigkeitsprüfung', status: 'completed', completedDate: '08.07.2026',
+      kind: 'step', stepType: 'task',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t4', title: 'Bisherige Fördermassnahmen erheben', assignee: 'Vogt Daniel', status: 'done' },
+        { id: 'sp-t5', title: 'Zuständige Fachstelle klären', assignee: 'Vogt Daniel', status: 'done' },
+        { id: 'sp-t6', title: 'Abklärungsbedarf festlegen', assignee: 'Vogt Daniel', status: 'done' },
+      ],
+      inputs: [
+        { id: 'sp-i8', type: 'field', label: 'Bisherige Massnahmen', value: 'Klasseninterne Förderung seit Schuljahr 2025/26, kein formeller Anspruch', required: true, fieldType: 'textarea', thematicGroup: 'Vorgeschichte' },
+        { id: 'sp-i9', type: 'field', label: 'Empfohlene Massnahmenstufe', value: 'Integrative Förderung (IF)', required: true, fieldType: 'select', options: ['Niederschwellige Förderung (schulintern)', 'Integrative Förderung (IF)', 'Logopädische Therapie', 'Verstärkte Massnahme (Sonderschulung)'], thematicGroup: 'Triage' },
+        { id: 'sp-i10', type: 'field', label: 'Abklärung erforderlich', value: 'Ja', required: true, fieldType: 'select', options: ['Ja', 'Nein'], thematicGroup: 'Triage' },
+      ],
+      actions: [{ id: 'sp-a2', label: 'Förderbedarf-Screening', type: 'ai', description: 'KI-gestützte Vorbeurteilung von Förderbedarf, Massnahmenstufe und zuständiger Fachstelle' }],
+      completionCriteria: [{ id: 'sp-c2', description: 'Triage abgeschlossen', met: true }],
+      conditionals: [{ id: 'sp-co2', condition: 'Abklärung erforderlich == "Nein"', thenAction: 'Niederschwellige Förderung ohne Kommissionsentscheid vereinbaren' }],
+    },
+    {
+      id: 'sp-3', number: '7003', title: 'Schulische Abklärung', status: 'completed', completedDate: '07.08.2026',
+      kind: 'step', stepType: 'subprocess',
+      responsible: 'Schulpsychologischer Dienst', category: 'Sonderpädagogik',
+      subSteps: [
+        { id: 'sp-3a', number: '7003.1', title: 'Aktenstudium und Auftragsklärung', status: 'completed', completedDate: '13.07.2026', responsible: 'Dr. Lang Miriam', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'sp-3b', number: '7003.2', title: 'Unterrichtsbeobachtung', status: 'completed', completedDate: '21.07.2026', responsible: 'Dr. Lang Miriam', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'sp-3c', number: '7003.3', title: 'Testdiagnostik mit dem Kind', status: 'completed', completedDate: '29.07.2026', responsible: 'Dr. Lang Miriam', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'sp-3d', number: '7003.4', title: 'Gespräch mit Eltern und Lehrperson', status: 'completed', completedDate: '07.08.2026', responsible: 'Dr. Lang Miriam', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+      ],
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t7', title: 'Abklärungsauftrag erteilen', assignee: 'Vogt Daniel', status: 'done' },
+        { id: 'sp-t8', title: 'Termine mit Eltern und Schule koordinieren', assignee: 'Dr. Lang Miriam', status: 'done' },
+        { id: 'sp-t9', title: 'Abklärung durchführen', assignee: 'Dr. Lang Miriam', status: 'done' },
+      ],
+      inputs: [
+        { id: 'sp-i11', type: 'document', label: 'Abklärungsauftrag', required: true, documentName: 'Abklaerungsauftrag_Bucher.pdf', uploaded: true },
+        { id: 'sp-i12', type: 'field', label: 'Abklärungszeitraum', value: '13.07.2026 bis 07.08.2026', required: false, fieldType: 'text', thematicGroup: 'Abklärung' },
+      ],
+      actions: [],
+      completionCriteria: [{ id: 'sp-c3', description: 'Abklärung durchgeführt', met: true }],
+      conditionals: [],
+    },
+    {
+      id: 'sp-4', number: '7004', title: 'Fachberichte einholen', status: 'in-progress', dueDate: '17.09.2026',
+      kind: 'gateway', gatewayType: 'parallel',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Sonderpädagogik',
+      parallelPathLabels: ['Schulpsychologie', 'Logopädie', 'Kinder- und Jugendpsychiatrie'],
+      parallelPaths: [
+        [{ id: 'sp-4a', number: '7004.1', title: 'SPD-Bericht mit Massnahmenempfehlung', status: 'completed', completedDate: '21.08.2026', responsible: 'Schulpsychologischer Dienst', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'sp-4b', number: '7004.2', title: 'Logopädischer Abklärungsbericht', status: 'in-progress', responsible: 'Logopädischer Dienst', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'sp-4c', number: '7004.3', title: 'Kinderärztliche Stellungnahme', status: 'pending', responsible: 'KJPD Region', category: 'Sonderpädagogik', contextLinks: [G('8')], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+      ],
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t10', title: 'SPD-Bericht entgegennehmen', assignee: 'Vogt Daniel', status: 'done' },
+        { id: 'sp-t11', title: 'Logopädischen Bericht nachfassen', assignee: 'Vogt Daniel', status: 'in-progress' },
+        { id: 'sp-t12', title: 'Kinderärztliche Stellungnahme anfordern', assignee: 'Meier Sandra', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i13', type: 'document', label: 'SPD-Bericht', required: true, documentName: 'SPD_Bericht_Bucher.pdf', uploaded: true },
+        { id: 'sp-i14', type: 'document', label: 'Logopädischer Bericht', required: true, uploaded: false },
+        { id: 'sp-i15', type: 'document', label: 'Kinderärztliche Stellungnahme', required: false, uploaded: false },
+      ],
+      actions: [{ id: 'sp-a3', label: 'Fachstellen erinnern', type: 'standard', description: 'Erinnerung an ausstehende Berichte' }],
+      completionCriteria: [{ id: 'sp-c4', description: 'Alle erforderlichen Fachberichte liegen vor', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'sp-5', number: '7005', title: 'Schulisches Standortgespräch (SSG)', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t13', title: 'SSG einberufen (Eltern, Lehrperson, Fachstellen)', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'sp-t14', title: 'Förderziele nach ICF festlegen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'sp-t15', title: 'Protokoll erstellen und unterzeichnen lassen', assignee: 'Meier Sandra', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i16', type: 'document', label: 'SSG-Protokoll', required: true, uploaded: false },
+        { id: 'sp-i17', type: 'field', label: 'Vereinbarte Förderziele', required: true, fieldType: 'textarea', thematicGroup: 'Förderplanung' },
+        { id: 'sp-i18', type: 'field', label: 'Konsens erreicht', required: true, fieldType: 'select', options: ['Ja', 'Nein, abweichende Haltung der Eltern'], thematicGroup: 'Förderplanung' },
+      ],
+      actions: [],
+      completionCriteria: [{ id: 'sp-c5', description: 'SSG durchgeführt, Förderziele vereinbart', met: false }],
+      conditionals: [{ id: 'sp-co3', condition: 'Konsens erreicht == "Nein, abweichende Haltung der Eltern"', thenAction: 'Abweichende Haltung im Antrag an die Kommission dokumentieren' }],
+    },
+    {
+      id: 'sp-6', number: '7006', title: 'Massnahmenantrag erstellen', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t16', title: 'Antrag mit Fachberichten zusammenstellen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'sp-t17', title: 'Kostenfolgen ausweisen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sp-t18', title: 'Antrag der Schulverwaltung zustellen', assignee: 'Vogt Daniel', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i19', type: 'document', label: 'Massnahmenantrag', required: true, uploaded: false },
+        { id: 'sp-i20', type: 'field', label: 'Beantragte Massnahme', required: true, fieldType: 'select', options: ['Integrative Förderung (IF)', 'Logopädische Therapie', 'Integrative Förderung und Logopädie', 'Verstärkte Massnahme (Sonderschulung)'], thematicGroup: 'Antrag' },
+        { id: 'sp-i21', type: 'field', label: 'Kostenfolge pro Schuljahr', required: false, fieldType: 'text', thematicGroup: 'Antrag' },
+      ],
+      actions: [{ id: 'sp-a4', label: 'Antrag aus Fachberichten entwerfen', type: 'ai', description: 'KI-Entwurf des Massnahmenantrags aus den vorliegenden Fachberichten' }],
+      completionCriteria: [{ id: 'sp-c6', description: 'Antrag erstellt und eingereicht', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'sp-7', number: '7007', title: 'Entscheid Bildungskommission', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Bildungskommission', category: 'Sonderpädagogik',
+      contextLinks: [G('8'), S('sitz-bk-1')],  // Geschäft UND Sitzung der Bildungskommission
+      tasks: [
+        { id: 'sp-t19', title: 'Geschäft traktandieren', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sp-t20', title: 'Antrag beraten', assignee: 'Bildungskommission', status: 'open' },
+        { id: 'sp-t21', title: 'Entscheid fällen und protokollieren', assignee: 'Bildungskommission', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i22', type: 'field', label: 'Entscheid', required: true, fieldType: 'select', options: ['Integrative Förderung (IF)', 'Logopädische Therapie', 'Integrative Förderung und Logopädie', 'Verstärkte Massnahme (Sonderschulung)', 'Kein Anspruch'], thematicGroup: 'Entscheid' },
+        { id: 'sp-i23', type: 'field', label: 'Befristung', required: true, fieldType: 'select', options: ['1 Schuljahr', '2 Schuljahre', 'unbefristet mit jährlicher Überprüfung'], thematicGroup: 'Entscheid' },
+      ],
+      actions: [{ id: 'sp-a5', label: 'Traktandum anmelden', type: 'standard', description: 'Meldet das Geschäft für die nächste Sitzung der Bildungskommission an' }],
+      completionCriteria: [{ id: 'sp-c7', description: 'Entscheid gefällt und protokolliert', met: false }],
+      conditionals: [{ id: 'sp-co4', condition: 'Entscheid == "Verstärkte Massnahme (Sonderschulung)"', thenAction: 'Kostengutsprache beim Kanton einholen' }],
+    },
+    {
+      id: 'sp-7-gw', number: '', title: 'Massnahmenentscheid', status: 'pending',
+      kind: 'gateway', gatewayType: 'decision',
+      responsible: '', category: 'Sonderpädagogik',
+      branches: [
+        { id: 'bsp-1', label: 'Integrative Förderung', condition: 'Entscheid == "Integrative Förderung (IF)"', steps: [] },
+        { id: 'bsp-2', label: 'Logopädische Therapie', condition: 'Entscheid == "Logopädische Therapie"', steps: [] },
+        { id: 'bsp-3', label: 'Verstärkte Massnahme', condition: 'Entscheid == "Verstärkte Massnahme (Sonderschulung)"', steps: [] },
+        { id: 'bsp-4', label: 'Kein Anspruch', condition: 'Entscheid == "Kein Anspruch"', steps: [] },
+      ],
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'sp-8', number: '7008', title: 'Verfügung eröffnen und Massnahme starten', status: 'pending',
+      kind: 'step', stepType: 'activity', activityKind: 'object-creation',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t22', title: 'Verfügung mit Rechtsmittelbelehrung erstellen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sp-t23', title: 'Verfügung den Erziehungsberechtigten eröffnen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sp-t24', title: 'Fachperson zuweisen und Massnahme im Stundenplan verankern', assignee: 'Vogt Daniel', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i24', type: 'document', label: 'Verfügung sonderpädagogische Massnahme', required: true, uploaded: false },
+        { id: 'sp-i25', type: 'field', label: 'Zugewiesene Fachperson', required: false, fieldType: 'text', thematicGroup: 'Umsetzung' },
+        { id: 'sp-i26', type: 'field', label: 'Start der Massnahme', required: false, fieldType: 'date', thematicGroup: 'Umsetzung' },
+      ],
+      actions: [
+        { id: 'sp-a6', label: 'Verfügung generieren', type: 'script', description: 'Erstellt die Verfügung als PDF' },
+        { id: 'sp-a7', label: 'Im Portal bereitstellen', type: 'standard', description: 'Stellt die Verfügung im CMI Portal bereit' },
+      ],
+      completionCriteria: [{ id: 'sp-c8', description: 'Verfügung eröffnet, Massnahme gestartet', met: false }],
+      conditionals: [],
+    },
+    {
+      id: 'sp-9', number: '7009', title: 'Überprüfung nach einem Schuljahr', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Vogt Daniel, Schulleitung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t25', title: 'SSG zur Überprüfung einberufen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'sp-t26', title: 'Wirkung der Massnahme beurteilen', assignee: 'Vogt Daniel', status: 'open' },
+        { id: 'sp-t27', title: 'Weiterführung oder Abschluss beantragen', assignee: 'Vogt Daniel', status: 'open' },
+      ],
+      inputs: [
+        { id: 'sp-i27', type: 'document', label: 'Überprüfungsbericht', required: true, uploaded: false },
+        { id: 'sp-i28', type: 'field', label: 'Resultat der Überprüfung', required: true, fieldType: 'select', options: ['Massnahme weiterführen', 'Massnahme anpassen', 'Massnahme abschliessen'], thematicGroup: 'Überprüfung' },
+      ],
+      actions: [],
+      completionCriteria: [{ id: 'sp-c9', description: 'Überprüfung durchgeführt', met: false }],
+      conditionals: [{ id: 'sp-co5', condition: 'Resultat der Überprüfung == "Massnahme weiterführen"', thenAction: 'Neuen Massnahmenantrag an die Bildungskommission stellen' }],
+    },
+    {
+      id: 'sp-9-gw', number: '', title: 'Weiterführung nötig?', status: 'pending',
+      kind: 'gateway', gatewayType: 'loop',
+      loopCondition: 'Resultat der Überprüfung != "Massnahme abschliessen"',
+      loopBody: [],
+      responsible: '', category: 'Sonderpädagogik',
+      contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
+    },
+    {
+      id: 'sp-10', number: '7010', title: 'Massnahme abgeschlossen, Verfahren beendet', status: 'pending',
+      kind: 'step', stepType: 'task',
+      responsible: 'Meier Sandra, Schulverwaltung', category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      tasks: [
+        { id: 'sp-t28', title: 'Abschluss den Eltern mitteilen', assignee: 'Meier Sandra', status: 'open' },
+        { id: 'sp-t29', title: 'Dossier archivieren', assignee: 'Sekretariat Schulverwaltung', status: 'open' },
+      ],
+      inputs: [], actions: [],
+      completionCriteria: [{ id: 'sp-c10', description: 'Dossier archiviert', met: false }],
+      conditionals: [],
+    },
+  ],
+};
+
 const INSTANCE_BAUGESUCH_1: Process = {
   id: 'inst-proc-bau-demo1',
-  title: 'Baugesuch Sonnenweg 12 — Neubau EFH',
+  title: 'Baugesuch Sonnenweg 12, Neubau EFH',
   kind: 'instance',
   templateId: 'proc-bau',
-  startedAt: '15.03.2026',
+  startedAt: '15.07.2026',
   startedBy: 'Weber Petra',
   instanceState: 'running',
   processOwner: { name: 'Oberholzer Martin', role: 'Bauverwalter', email: 'm.oberholzer@gemeinde.ch' },
   events: [
-    { id: 'e4', timestamp: '2026-04-05T10:00:00Z', type: 'step_completed', description: 'Schritt «Öffentliche Auflage» abgeschlossen', actor: 'Oberholzer Martin', stepId: 'ib1-3', stepTitle: 'Öffentliche Auflage' },
-    { id: 'e3', timestamp: '2026-03-20T14:30:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-2', stepTitle: 'Vollständigkeitsprüfung' },
-    { id: 'e2', timestamp: '2026-03-15T09:15:00Z', type: 'step_completed', description: 'Schritt «Baugesuch beantragt» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-1', stepTitle: 'Baugesuch beantragt' },
-    { id: 'e1', timestamp: '2026-03-15T09:00:00Z', type: 'started', description: 'Workflow «Baugesuch Sonnenweg 12» gestartet von Weber Petra', actor: 'Weber Petra' },
+    { id: 'e4', timestamp: '2026-08-05T10:00:00Z', type: 'step_completed', description: 'Schritt «Öffentliche Auflage» abgeschlossen', actor: 'Oberholzer Martin', stepId: 'ib1-3', stepTitle: 'Öffentliche Auflage' },
+    { id: 'e3', timestamp: '2026-07-20T14:30:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-2', stepTitle: 'Vollständigkeitsprüfung' },
+    { id: 'e2', timestamp: '2026-07-15T09:15:00Z', type: 'step_completed', description: 'Schritt «Baugesuch beantragt» abgeschlossen', actor: 'Weber Petra', stepId: 'ib1-1', stepTitle: 'Baugesuch beantragt' },
+    { id: 'e1', timestamp: '2026-07-15T09:00:00Z', type: 'started', description: 'Workflow «Baugesuch Sonnenweg 12» gestartet von Weber Petra', actor: 'Weber Petra' },
   ],
   steps: [
     {
-      id: 'ib1-1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '15.03.2026',
+      id: 'ib1-1', number: '6701', title: 'Baugesuch beantragt', status: 'completed', completedDate: '15.07.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Weber Petra, Gesuchstellerin', category: 'Baugesuch',
       contextLinks: [], tasks: [
@@ -2448,7 +3001,7 @@ const INSTANCE_BAUGESUCH_1: Process = {
       ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: 'ib1-2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '20.03.2026',
+      id: 'ib1-2', number: '6811', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '20.07.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Baugesuch',
       contextLinks: [], tasks: [
@@ -2456,13 +3009,13 @@ const INSTANCE_BAUGESUCH_1: Process = {
       ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: 'ib1-3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '05.04.2026',
+      id: 'ib1-3', number: '6855', title: 'Öffentliche Auflage', status: 'completed', completedDate: '05.08.2026',
       kind: 'step', stepType: 'subprocess',
       responsible: 'Oberholzer Martin, Bauverwalter', category: 'Bewilligungsverfahren',
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
       subSteps: [
-        { id: 'ib1-3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '20.03.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
-        { id: 'ib1-3b', number: '6855.2', title: 'Auflage (30 Tage)', status: 'completed', completedDate: '05.04.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'ib1-3a', number: '6855.1', title: 'Publikation im Amtsblatt', status: 'completed', completedDate: '20.07.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
+        { id: 'ib1-3b', number: '6855.2', title: 'Auflage (30 Tage)', status: 'completed', completedDate: '05.08.2026', responsible: 'Oberholzer Martin', category: 'Bewilligungsverfahren', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] },
       ],
     },
     {
@@ -2498,21 +3051,21 @@ const INSTANCE_EINBUERGERUNG_1: Process = {
   title: 'Einbürgerung Nguyen Van An',
   kind: 'instance',
   templateId: 'proc-eb',
-  startedAt: '01.02.2026',
+  startedAt: '01.06.2026',
   startedBy: 'Schmid Klaus',
   instanceState: 'running',
   processOwner: { name: 'Frei Barbara', role: 'Gemeindeschreiberin', email: 'b.frei@gemeinde.ch' },
   events: [
-    { id: 'ee6', timestamp: '2026-04-01T10:00:00Z', type: 'step_completed', description: 'Schritt «Vorbereitung Gemeinderatssitzung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-6', stepTitle: 'Vorbereitung GR-Sitzung' },
-    { id: 'ee5', timestamp: '2026-03-15T11:00:00Z', type: 'branch_chosen', description: 'Entscheidungspfad «Empfohlen» gewählt', actor: 'Schmid Klaus', stepId: 'ie1-gw-dec', stepTitle: 'Empfehlung Einbürgerungskommission' },
-    { id: 'ee4', timestamp: '2026-03-10T16:00:00Z', type: 'step_completed', description: 'Schritt «Prüfung Sprache & Integration» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-gw-par', stepTitle: 'Prüfung Sprache & Integration' },
-    { id: 'ee3', timestamp: '2026-02-20T09:00:00Z', type: 'step_completed', description: 'Schritt «Vorprüfung Aufenthalt & Kriterien» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-3', stepTitle: 'Vorprüfung Aufenthalt & Kriterien' },
-    { id: 'ee2', timestamp: '2026-02-10T14:00:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-2', stepTitle: 'Vollständigkeitsprüfung' },
-    { id: 'ee1', timestamp: '2026-02-01T08:30:00Z', type: 'started', description: 'Workflow «Einbürgerung Nguyen Van An» gestartet von Schmid Klaus', actor: 'Schmid Klaus' },
+    { id: 'ee6', timestamp: '2026-08-01T10:00:00Z', type: 'step_completed', description: 'Schritt «Vorbereitung Gemeinderatssitzung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-6', stepTitle: 'Vorbereitung GR-Sitzung' },
+    { id: 'ee5', timestamp: '2026-07-15T11:00:00Z', type: 'branch_chosen', description: 'Entscheidungspfad «Empfohlen» gewählt', actor: 'Schmid Klaus', stepId: 'ie1-gw-dec', stepTitle: 'Empfehlung Einbürgerungskommission' },
+    { id: 'ee4', timestamp: '2026-07-10T16:00:00Z', type: 'step_completed', description: 'Schritt «Prüfung Sprache & Integration» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-gw-par', stepTitle: 'Prüfung Sprache & Integration' },
+    { id: 'ee3', timestamp: '2026-06-20T09:00:00Z', type: 'step_completed', description: 'Schritt «Vorprüfung Aufenthalt & Kriterien» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-3', stepTitle: 'Vorprüfung Aufenthalt & Kriterien' },
+    { id: 'ee2', timestamp: '2026-06-10T14:00:00Z', type: 'step_completed', description: 'Schritt «Vollständigkeitsprüfung» abgeschlossen', actor: 'Schmid Klaus', stepId: 'ie1-2', stepTitle: 'Vollständigkeitsprüfung' },
+    { id: 'ee1', timestamp: '2026-06-01T08:30:00Z', type: 'started', description: 'Workflow «Einbürgerung Nguyen Van An» gestartet von Schmid Klaus', actor: 'Schmid Klaus' },
   ],
   steps: [
     {
-      id: 'ie1-1', number: '1', title: 'Gesuch eingereicht', status: 'completed', completedDate: '01.02.2026',
+      id: 'ie1-1', number: '1', title: 'Gesuch eingereicht', status: 'completed', completedDate: '01.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Nguyen Van An, Gesuchsteller', category: 'Einbürgerung',
       contextLinks: [], tasks: [
@@ -2521,30 +3074,30 @@ const INSTANCE_EINBUERGERUNG_1: Process = {
       ], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: 'ie1-2', number: '2', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '10.02.2026',
+      id: 'ie1-2', number: '2', title: 'Vollständigkeitsprüfung', status: 'completed', completedDate: '10.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Schmid Klaus, Sachbearbeiter', category: 'Einbürgerung',
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: 'ie1-3', number: '3', title: 'Vorprüfung Aufenthalt & Kriterien', status: 'completed', completedDate: '20.02.2026',
+      id: 'ie1-3', number: '3', title: 'Vorprüfung Aufenthalt & Kriterien', status: 'completed', completedDate: '20.06.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Schmid Klaus, Sachbearbeiter', category: 'Einbürgerung',
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
     },
     {
-      id: 'ie1-gw-par', number: '', title: 'Prüfung Sprache & Integration', status: 'completed', completedDate: '10.03.2026',
+      id: 'ie1-gw-par', number: '', title: 'Prüfung Sprache & Integration', status: 'completed', completedDate: '10.07.2026',
       kind: 'gateway', gatewayType: 'parallel',
       responsible: '', category: 'Einbürgerung',
       contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [],
       parallelPathLabels: ['Sprachnachweis', 'Integrationsnachweis'],
       parallelPaths: [
-        [{ id: 'ie1-p1-1', number: '4a', title: 'Sprachkenntnisse prüfen (B1)', status: 'completed', completedDate: '05.03.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
-        [{ id: 'ie1-p2-1', number: '4b', title: 'Integrationsgrad prüfen', status: 'completed', completedDate: '08.03.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'ie1-p1-1', number: '4a', title: 'Sprachkenntnisse prüfen (B1)', status: 'completed', completedDate: '05.07.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
+        [{ id: 'ie1-p2-1', number: '4b', title: 'Integrationsgrad prüfen', status: 'completed', completedDate: '08.07.2026', responsible: 'Schmid Klaus', category: 'Einbürgerung', contextLinks: [], tasks: [], inputs: [], actions: [], completionCriteria: [], conditionals: [] }],
       ],
     },
     {
-      id: 'ie1-gw-dec', number: '', title: 'Empfehlung Einbürgerungskommission', status: 'completed', completedDate: '15.03.2026',
+      id: 'ie1-gw-dec', number: '', title: 'Empfehlung Einbürgerungskommission', status: 'completed', completedDate: '15.07.2026',
       kind: 'gateway', gatewayType: 'decision',
       chosenBranchId: 'ie1-br-empfohlen',
       responsible: '', category: 'Einbürgerung',
@@ -2567,27 +3120,27 @@ const INSTANCE_EINBUERGERUNG_1: Process = {
 const INSTANCE_DOSSIER_BAU: Process = {
   ...PROCESS_BAUGESUCH,
   id: 'inst-dossier-bau', kind: 'instance', templateId: 'proc-bau',
-  startedAt: '14.01.2025', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+  startedAt: '20.06.2026', startedBy: 'Maria Muster', instanceState: 'running', events: [],
 };
 const INSTANCE_DOSSIER_AE: Process = {
   ...PROCESS_AKTENEINSICHT,
   id: 'inst-dossier-ae', kind: 'instance', templateId: 'proc-ae',
-  startedAt: '03.02.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+  startedAt: '10.08.2026', startedBy: 'Hans Berger', instanceState: 'running', events: [],
 };
 const INSTANCE_DOSSIER_EB: Process = {
   ...PROCESS_EINBUERGERUNG,
   id: 'inst-dossier-eb', kind: 'instance', templateId: 'proc-eb',
-  startedAt: '15.11.2024', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+  startedAt: '15.06.2026', startedBy: 'Maria Muster', instanceState: 'running', events: [],
 };
 const INSTANCE_DOSSIER_GR: Process = {
   ...PROCESS_GEMEINDERAT,
   id: 'inst-dossier-gr', kind: 'instance', templateId: 'proc-gr',
-  startedAt: '20.01.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+  startedAt: '01.08.2026', startedBy: 'Hans Berger', instanceState: 'running', events: [],
 };
 const INSTANCE_DOSSIER_VA: Process = {
   ...PROCESS_VERANSTALTUNG,
   id: 'inst-dossier-va', kind: 'instance', templateId: 'proc-va',
-  startedAt: '01.03.2025', startedBy: 'Maria Muster', instanceState: 'running', events: [],
+  startedAt: '20.07.2026', startedBy: 'Maria Muster', instanceState: 'running', events: [],
 };
 // Second Veranstaltung instance: a large-scale event, so the KI+ risk
 // assessment differs markedly from the Dorffest. Per-instance field values
@@ -2595,12 +3148,23 @@ const INSTANCE_DOSSIER_VA: Process = {
 const INSTANCE_DOSSIER_VA_2: Process = {
   ...PROCESS_VERANSTALTUNG,
   id: 'inst-dossier-va2', kind: 'instance', templateId: 'proc-va',
-  startedAt: '05.05.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+  startedAt: '12.07.2026', startedBy: 'Hans Berger', instanceState: 'running', events: [],
 };
 const INSTANCE_DOSSIER_KESB: Process = {
   ...PROCESS_KESB,
   id: 'inst-dossier-kesb', kind: 'instance', templateId: 'proc-kesb',
-  startedAt: '05.02.2025', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+  startedAt: '04.08.2026', startedBy: 'Hans Berger', instanceState: 'running', events: [],
+};
+
+const INSTANCE_DOSSIER_SE: Process = {
+  ...PROCESS_SCHULEINTRITT,
+  id: 'inst-dossier-se', kind: 'instance', templateId: 'proc-se',
+  startedAt: '03.08.2026', startedBy: 'Meier Sandra', instanceState: 'running', events: [],
+};
+const INSTANCE_DOSSIER_SP: Process = {
+  ...PROCESS_SONDERPAED,
+  id: 'inst-dossier-sp', kind: 'instance', templateId: 'proc-sp',
+  startedAt: '29.06.2026', startedBy: 'Vogt Daniel', instanceState: 'running', events: [],
 };
 
 const ALL_PROCESSES: Process[] = [
@@ -2610,6 +3174,8 @@ const ALL_PROCESSES: Process[] = [
   PROCESS_GEMEINDERAT,
   PROCESS_VERANSTALTUNG,
   PROCESS_KESB,
+  PROCESS_SCHULEINTRITT,
+  PROCESS_SONDERPAED,
   INSTANCE_BAUGESUCH_1,
   INSTANCE_EINBUERGERUNG_1,
   INSTANCE_DOSSIER_BAU,
@@ -2619,6 +3185,8 @@ const ALL_PROCESSES: Process[] = [
   INSTANCE_DOSSIER_VA,
   INSTANCE_DOSSIER_VA_2,
   INSTANCE_DOSSIER_KESB,
+  INSTANCE_DOSSIER_SE,
+  INSTANCE_DOSSIER_SP,
 ];
 
 // ============================================================
@@ -2626,21 +3194,21 @@ const ALL_PROCESSES: Process[] = [
 // ============================================================
 
 const DOSSIER_BAUGESUCH: Dossier = {
-  id: '1', number: '2024-0009', title: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)',
+  id: '1', number: '2026-0009', title: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)',
   processId: 'inst-dossier-bau',
   serviceRequest: {
-    id: 'sr-1', portalFormTitle: 'Baugesuch einreichen', submittedDate: '20.02.2024', submittedBy: 'Müller Sarah', email: 's.mueller@example.ch',
+    id: 'sr-1', portalFormTitle: 'Baugesuch einreichen', submittedDate: '20.06.2026', submittedBy: 'Müller Sarah', email: 's.mueller@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihr Baugesuch wird aktuell geprüft',
     messages: [
-      { id: 'm1', date: '21.02.2024 09:15', author: 'System', direction: 'to-citizen', text: 'Ihr Baugesuch wurde erfolgreich eingereicht und wird nun geprüft.', read: true },
-      { id: 'm2', date: '28.02.2024 14:30', author: 'Oberholzer Martin', direction: 'to-citizen', text: 'Guten Tag Frau Müller, die Vollständigkeitsprüfung Ihres Baugesuchs ist abgeschlossen. Alle Unterlagen sind vollständig. Das Verfahren wird fortgesetzt.', read: true },
-      { id: 'm3', date: '01.03.2024 10:00', author: 'Müller Sarah', direction: 'from-citizen', text: 'Vielen Dank für die Rückmeldung. Wie lange dauert das Verfahren voraussichtlich?', read: true },
-      { id: 'm4', date: '01.03.2024 15:45', author: 'Oberholzer Martin', direction: 'to-citizen', text: 'Das Verfahren dauert in der Regel 3-6 Monate. Sie werden über jeden Schritt informiert.', read: true },
+      { id: 'm1', date: '21.06.2026 09:15', author: 'System', direction: 'to-citizen', text: 'Ihr Baugesuch wurde erfolgreich eingereicht und wird nun geprüft.', read: true },
+      { id: 'm2', date: '28.06.2026 14:30', author: 'Oberholzer Martin', direction: 'to-citizen', text: 'Guten Tag Frau Müller, die Vollständigkeitsprüfung Ihres Baugesuchs ist abgeschlossen. Alle Unterlagen sind vollständig. Das Verfahren wird fortgesetzt.', read: true },
+      { id: 'm3', date: '01.07.2026 10:00', author: 'Müller Sarah', direction: 'from-citizen', text: 'Vielen Dank für die Rückmeldung. Wie lange dauert das Verfahren voraussichtlich?', read: true },
+      { id: 'm4', date: '01.07.2026 15:45', author: 'Oberholzer Martin', direction: 'to-citizen', text: 'Das Verfahren dauert in der Regel 3-6 Monate. Sie werden über jeden Schritt informiert.', read: true },
     ],
     portalDocuments: [
-      { id: 'pd1', name: 'Eingangsbestätigung', fileName: 'Eingangsbestaetigung_2024-0009.pdf', direction: 'to-citizen', uploadDate: '21.02.2024', description: 'Offizielle Eingangsbestätigung' },
-      { id: 'pd2', name: 'Baugesuchsformular', fileName: 'Baugesuch_2024.pdf', direction: 'from-citizen', uploadDate: '20.02.2024' },
-      { id: 'pd3', name: 'Situationsplan', fileName: 'Situationsplan.pdf', direction: 'from-citizen', uploadDate: '20.02.2024' },
+      { id: 'pd1', name: 'Eingangsbestätigung', fileName: 'Eingangsbestaetigung_2026-0009.pdf', direction: 'to-citizen', uploadDate: '21.06.2026', description: 'Offizielle Eingangsbestätigung' },
+      { id: 'pd2', name: 'Baugesuchsformular', fileName: 'Baugesuch_2026.pdf', direction: 'from-citizen', uploadDate: '20.06.2026' },
+      { id: 'pd3', name: 'Situationsplan', fileName: 'Situationsplan.pdf', direction: 'from-citizen', uploadDate: '20.06.2026' },
     ],
     formData: [
       { label: 'Gesuchsteller', value: 'Müller Sarah' },
@@ -2648,112 +3216,112 @@ const DOSSIER_BAUGESUCH: Dossier = {
       { label: 'Parzelle', value: '1234' },
       { label: 'Vorhaben', value: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)' },
       { label: 'Geschätzte Kosten', value: "CHF 180'000" },
-      { label: 'Geplanter Baubeginn', value: '01.09.2025' },
+      { label: 'Geplanter Baubeginn', value: '02.11.2026' },
     ],
   },
   notes: [
-    { id: 'n1', date: '21.02.2024 09:30', author: 'Oberholzer Martin', subject: 'Eingang Baugesuch', text: 'Baugesuch für Umbau Gebäude ist eingegangen. Unterlagen vollständig, Verfahren wird eingeleitet.', visibility: 'intern' },
-    { id: 'n2', date: '28.02.2024 15:00', author: 'Oberholzer Martin', subject: 'Vollständigkeitsprüfung OK', text: 'Alle Unterlagen geprüft und für vollständig befunden. Weiter mit öffentlicher Auflage.', visibility: 'intern' },
-    { id: 'n3', date: '20.04.2024 11:00', author: 'Oberholzer Martin', text: 'Fachberichte von Brandschutz, Statik und Energie sind alle positiv eingetroffen. Keine offenen Auflagen.', visibility: 'intern' },
-    { id: 'n4', date: '15.03.2024 08:00', author: 'System', subject: 'Öffentliche Auflage abgeschlossen', text: 'Auflagefrist ohne Einsprachen abgelaufen.', visibility: 'extern' },
+    { id: 'n1', date: '21.06.2026 09:30', author: 'Oberholzer Martin', subject: 'Eingang Baugesuch', text: 'Baugesuch für Umbau Gebäude ist eingegangen. Unterlagen vollständig, Verfahren wird eingeleitet.', visibility: 'intern' },
+    { id: 'n2', date: '28.06.2026 15:00', author: 'Oberholzer Martin', subject: 'Vollständigkeitsprüfung OK', text: 'Alle Unterlagen geprüft und für vollständig befunden. Weiter mit öffentlicher Auflage.', visibility: 'intern' },
+    { id: 'n3', date: '20.08.2026 11:00', author: 'Oberholzer Martin', text: 'Fachberichte von Brandschutz, Statik und Energie sind alle positiv eingetroffen. Keine offenen Auflagen.', visibility: 'intern' },
+    { id: 'n4', date: '15.07.2026 08:00', author: 'System', subject: 'Öffentliche Auflage abgeschlossen', text: 'Auflagefrist ohne Einsprachen abgelaufen.', visibility: 'extern' },
   ],
   participants: [
-    { id: 'p1', role: 'Gesuchsteller:in', roleType: 'primary', name: 'Müller Sarah', email: 's.mueller@example.ch', phone: '079 123 45 67', since: '21.02.2024' },
-    { id: 'p2', role: 'Bauverwalter', roleType: 'internal', name: 'Oberholzer Martin', organization: 'Gemeinde Dorfname', email: 'm.oberholzer@gemeinde.ch', phone: '044 987 65 43', since: '21.02.2024' },
-    { id: 'p3', role: 'Architekt', roleType: 'external', name: 'Schmid Roland', organization: 'Schmid Architekten AG', email: 'r.schmid@architekten.ch', since: '21.02.2024' },
-    { id: 'p4', role: 'Brandschutz', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '15.03.2024' },
-    { id: 'p5', role: 'Statik', roleType: 'authority', name: 'Muster Ingenieure AG', organization: 'Muster Ingenieure AG', email: 'info@muster-ing.ch', since: '15.03.2024' },
-    { id: 'p6', role: 'Sekretariat', roleType: 'internal', name: 'Sekretariat Gemeinde', organization: 'Gemeinde Dorfname', since: '21.02.2024' },
+    { id: 'p1', role: 'Gesuchsteller:in', roleType: 'primary', name: 'Müller Sarah', email: 's.mueller@example.ch', phone: '079 123 45 67', since: '21.06.2026' },
+    { id: 'p2', role: 'Bauverwalter', roleType: 'internal', name: 'Oberholzer Martin', organization: 'Gemeinde Dorfname', email: 'm.oberholzer@gemeinde.ch', phone: '044 987 65 43', since: '21.06.2026' },
+    { id: 'p3', role: 'Architekt', roleType: 'external', name: 'Schmid Roland', organization: 'Schmid Architekten AG', email: 'r.schmid@architekten.ch', since: '21.06.2026' },
+    { id: 'p4', role: 'Brandschutz', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '15.07.2026' },
+    { id: 'p5', role: 'Statik', roleType: 'authority', name: 'Muster Ingenieure AG', organization: 'Muster Ingenieure AG', email: 'info@muster-ing.ch', since: '15.07.2026' },
+    { id: 'p6', role: 'Sekretariat', roleType: 'internal', name: 'Sekretariat Gemeinde', organization: 'Gemeinde Dorfname', since: '21.06.2026' },
   ],
 };
 
 const DOSSIER_AKTENEINSICHT: Dossier = {
-  id: '2', number: '2025-0042', title: 'Akteneinsicht Verkehrsplanung Dorfzentrum',
+  id: '2', number: '2026-0042', title: 'Akteneinsicht Verkehrsplanung Dorfzentrum',
   processId: 'inst-dossier-ae',
   serviceRequest: {
-    id: 'sr-2', portalFormTitle: 'Akteneinsicht beantragen', submittedDate: '10.03.2025', submittedBy: 'Keller Thomas', email: 't.keller@example.ch',
+    id: 'sr-2', portalFormTitle: 'Akteneinsicht beantragen', submittedDate: '10.08.2026', submittedBy: 'Keller Thomas', email: 't.keller@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihr Antrag wird geprüft — Identitätsnachweis ausstehend',
     messages: [
-      { id: 'm10', date: '10.03.2025 10:00', author: 'System', direction: 'to-citizen', text: 'Ihr Antrag auf Akteneinsicht wurde eingereicht.', read: true },
-      { id: 'm11', date: '11.03.2025 09:00', author: 'Weber Claudia', direction: 'to-citizen', text: 'Guten Tag Herr Keller, wir benötigen einen gültigen Identitätsnachweis, um Ihren Antrag weiter bearbeiten zu können. Bitte laden Sie eine Kopie Ihres Ausweises hoch.', read: true },
-      { id: 'm12', date: '12.03.2025 14:20', author: 'Keller Thomas', direction: 'from-citizen', text: 'Ich habe meinen Ausweis hochgeladen. Bitte prüfen Sie.', read: false },
+      { id: 'm10', date: '10.08.2026 10:00', author: 'System', direction: 'to-citizen', text: 'Ihr Antrag auf Akteneinsicht wurde eingereicht.', read: true },
+      { id: 'm11', date: '11.08.2026 09:00', author: 'Weber Claudia', direction: 'to-citizen', text: 'Guten Tag Herr Keller, wir benötigen einen gültigen Identitätsnachweis, um Ihren Antrag weiter bearbeiten zu können. Bitte laden Sie eine Kopie Ihres Ausweises hoch.', read: true },
+      { id: 'm12', date: '12.08.2026 14:20', author: 'Keller Thomas', direction: 'from-citizen', text: 'Ich habe meinen Ausweis hochgeladen. Bitte prüfen Sie.', read: false },
     ],
     portalDocuments: [
-      { id: 'pd10', name: 'Antragsbestätigung', fileName: 'Bestaetigung_AE_2025-0042.pdf', direction: 'to-citizen', uploadDate: '10.03.2025' },
-      { id: 'pd11', name: 'Identitätsnachweis', fileName: 'Ausweis_Keller.pdf', direction: 'from-citizen', uploadDate: '12.03.2025', description: 'Kopie Personalausweis' },
+      { id: 'pd10', name: 'Antragsbestätigung', fileName: 'Bestaetigung_AE_2026-0042.pdf', direction: 'to-citizen', uploadDate: '10.08.2026' },
+      { id: 'pd11', name: 'Identitätsnachweis', fileName: 'Ausweis_Keller.pdf', direction: 'from-citizen', uploadDate: '12.08.2026', description: 'Kopie Personalausweis' },
     ],
     formData: [
       { label: 'Antragsteller', value: 'Keller Thomas' },
       { label: 'Adresse', value: 'Hauptstrasse 42, 8001 Zürich' },
-      { label: 'Betroffenes Dossier', value: 'Verkehrsplanung Dorfzentrum 2024' },
+      { label: 'Betroffenes Dossier', value: 'Verkehrsplanung Dorfzentrum 2025' },
       { label: 'Begründung', value: 'Persönliche Betroffenheit als Anlieger' },
       { label: 'Gewünschter Umfang', value: 'Gesamtes Dossier inkl. Gutachten' },
     ],
   },
   notes: [
-    { id: 'ae-n1', date: '10.03.2025 10:15', author: 'Weber Claudia', subject: 'Antrag eingegangen', text: 'Antrag auf Akteneinsicht von Keller Thomas eingegangen. Persönliche Betroffenheit als Anlieger geltend gemacht.', visibility: 'intern' },
-    { id: 'ae-n2', date: '11.03.2025 09:30', author: 'Weber Claudia', text: 'Identitätsnachweis per Portal angefordert.', visibility: 'intern' },
+    { id: 'ae-n1', date: '10.08.2026 10:15', author: 'Weber Claudia', subject: 'Antrag eingegangen', text: 'Antrag auf Akteneinsicht von Keller Thomas eingegangen. Persönliche Betroffenheit als Anlieger geltend gemacht.', visibility: 'intern' },
+    { id: 'ae-n2', date: '11.08.2026 09:30', author: 'Weber Claudia', text: 'Identitätsnachweis per Portal angefordert.', visibility: 'intern' },
   ],
   participants: [
-    { id: 'ae-p1', role: 'Antragsteller', roleType: 'primary', name: 'Keller Thomas', email: 't.keller@example.ch', since: '10.03.2025' },
-    { id: 'ae-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Weber Claudia', organization: 'Gemeindekanzlei', email: 'c.weber@gemeinde.ch', phone: '044 111 22 33', since: '10.03.2025' },
+    { id: 'ae-p1', role: 'Antragsteller', roleType: 'primary', name: 'Keller Thomas', email: 't.keller@example.ch', since: '10.08.2026' },
+    { id: 'ae-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Weber Claudia', organization: 'Gemeindekanzlei', email: 'c.weber@gemeinde.ch', phone: '044 111 22 33', since: '10.08.2026' },
   ],
 };
 
 const DOSSIER_EINBUERGERUNG: Dossier = {
-  id: '3', number: '2025-0018', title: 'Einbürgerungsgesuch Rossi Marco',
+  id: '3', number: '2026-0018', title: 'Einbürgerungsgesuch Rossi Marco',
   processId: 'inst-dossier-eb',
   serviceRequest: {
-    id: 'sr-3', portalFormTitle: 'Einbürgerungsgesuch stellen', submittedDate: '15.01.2025', submittedBy: 'Rossi Marco', email: 'm.rossi@example.ch',
+    id: 'sr-3', portalFormTitle: 'Einbürgerungsgesuch stellen', submittedDate: '15.06.2026', submittedBy: 'Rossi Marco', email: 'm.rossi@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Sprachprüfung ausstehend',
     messages: [
-      { id: 'm20', date: '15.01.2025 08:30', author: 'System', direction: 'to-citizen', text: 'Ihr Einbürgerungsgesuch wurde erfolgreich eingereicht.', read: true },
-      { id: 'm21', date: '20.01.2025 10:00', author: 'Huber Peter', direction: 'to-citizen', text: 'Guten Tag Herr Rossi, bitte vereinbaren Sie einen Termin für die Sprachprüfung unter Tel. 044 123 45 67.', read: true },
-      { id: 'm22', date: '22.01.2025 16:00', author: 'Rossi Marco', direction: 'from-citizen', text: 'Termin vereinbart für 15.02.2025. Gibt es Vorbereitungsmaterial?', read: true },
-      { id: 'm23', date: '23.01.2025 09:00', author: 'Huber Peter', direction: 'to-citizen', text: 'Ja, ich stelle Ihnen das Informationsblatt im Portal bereit.', read: true },
+      { id: 'm20', date: '15.06.2026 08:30', author: 'System', direction: 'to-citizen', text: 'Ihr Einbürgerungsgesuch wurde erfolgreich eingereicht.', read: true },
+      { id: 'm21', date: '20.06.2026 10:00', author: 'Huber Peter', direction: 'to-citizen', text: 'Guten Tag Herr Rossi, bitte vereinbaren Sie einen Termin für die Sprachprüfung unter Tel. 044 123 45 67.', read: true },
+      { id: 'm22', date: '22.06.2026 16:00', author: 'Rossi Marco', direction: 'from-citizen', text: 'Termin vereinbart für 10.09.2026. Gibt es Vorbereitungsmaterial?', read: true },
+      { id: 'm23', date: '23.06.2026 09:00', author: 'Huber Peter', direction: 'to-citizen', text: 'Ja, ich stelle Ihnen das Informationsblatt im Portal bereit.', read: true },
     ],
     portalDocuments: [
-      { id: 'pd20', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_EB_2025-0018.pdf', direction: 'to-citizen', uploadDate: '15.01.2025' },
-      { id: 'pd21', name: 'Informationsblatt Sprachprüfung', fileName: 'Info_Sprachpruefung.pdf', direction: 'to-citizen', uploadDate: '23.01.2025', description: 'Vorbereitung auf die Sprachprüfung' },
-      { id: 'pd22', name: 'Strafregisterauszug', fileName: 'Strafregister_Rossi.pdf', direction: 'from-citizen', uploadDate: '16.01.2025' },
-      { id: 'pd23', name: 'Betreibungsauszug', fileName: 'Betreibung_Rossi.pdf', direction: 'from-citizen', uploadDate: '16.01.2025' },
+      { id: 'pd20', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_EB_2026-0018.pdf', direction: 'to-citizen', uploadDate: '15.06.2026' },
+      { id: 'pd21', name: 'Informationsblatt Sprachprüfung', fileName: 'Info_Sprachpruefung.pdf', direction: 'to-citizen', uploadDate: '23.06.2026', description: 'Vorbereitung auf die Sprachprüfung' },
+      { id: 'pd22', name: 'Strafregisterauszug', fileName: 'Strafregister_Rossi.pdf', direction: 'from-citizen', uploadDate: '16.06.2026' },
+      { id: 'pd23', name: 'Betreibungsauszug', fileName: 'Betreibung_Rossi.pdf', direction: 'from-citizen', uploadDate: '16.06.2026' },
     ],
     formData: [
       { label: 'Gesuchsteller', value: 'Rossi Marco' },
-      { label: 'Geburtsdatum', value: '12.05.1985' },
+      { label: 'Geburtsdatum', value: '12.10.1986' },
       { label: 'Nationalität', value: 'Italienisch' },
-      { label: 'Wohnhaft in Gemeinde seit', value: '01.03.2015' },
+      { label: 'Wohnhaft in Gemeinde seit', value: '01.08.2016' },
       { label: 'Wohnadresse', value: 'Bahnhofstrasse 88, 8001 Zürich' },
       { label: 'Beruf', value: 'Software-Entwickler' },
       { label: 'Familienstand', value: 'Verheiratet, 2 Kinder' },
     ],
   },
   notes: [
-    { id: 'eb-n1', date: '15.01.2025 09:00', author: 'Huber Peter', subject: 'Einbürgerungsgesuch Rossi', text: 'Gesuch von Marco Rossi eingegangen. Wohnsitzdauer erfüllt (10 Jahre). Sprachprüfung muss noch absolviert werden.', visibility: 'intern' },
-    { id: 'eb-n2', date: '20.01.2025 10:30', author: 'Huber Peter', text: 'Termin für Sprachprüfung am 15.02.2025 vereinbart. Informationsblatt via Portal zugestellt.', visibility: 'intern' },
-    { id: 'eb-n3', date: '22.01.2025 16:30', author: 'System', subject: 'Portal-Nachricht', text: 'Herr Rossi fragt nach Vorbereitungsmaterial für die Sprachprüfung.', visibility: 'extern' },
+    { id: 'eb-n1', date: '15.06.2026 09:00', author: 'Huber Peter', subject: 'Einbürgerungsgesuch Rossi', text: 'Gesuch von Marco Rossi eingegangen. Wohnsitzdauer erfüllt (10 Jahre). Sprachprüfung muss noch absolviert werden.', visibility: 'intern' },
+    { id: 'eb-n2', date: '20.06.2026 10:30', author: 'Huber Peter', text: 'Termin für Sprachprüfung am 10.09.2026 vereinbart. Informationsblatt via Portal zugestellt.', visibility: 'intern' },
+    { id: 'eb-n3', date: '22.06.2026 16:30', author: 'System', subject: 'Portal-Nachricht', text: 'Herr Rossi fragt nach Vorbereitungsmaterial für die Sprachprüfung.', visibility: 'extern' },
   ],
   participants: [
-    { id: 'eb-p1', role: 'Gesuchsteller', roleType: 'primary', name: 'Rossi Marco', email: 'm.rossi@example.ch', phone: '079 456 78 90', since: '15.01.2025' },
-    { id: 'eb-p2', role: 'Sachbearbeiter', roleType: 'internal', name: 'Huber Peter', organization: 'Einwohnerdienste', email: 'p.huber@gemeinde.ch', phone: '044 333 44 55', since: '15.01.2025' },
-    { id: 'eb-p3', role: 'Sprachschule', roleType: 'external', name: 'Sprachschule Dorfname', organization: 'Sprachschule Dorfname GmbH', email: 'info@sprachschule.ch', since: '20.01.2025' },
-    { id: 'eb-p4', role: 'Einbürgerungskommission', roleType: 'authority', name: 'Einbürgerungskommission', organization: 'Gemeinde Dorfname', since: '15.01.2025' },
+    { id: 'eb-p1', role: 'Gesuchsteller', roleType: 'primary', name: 'Rossi Marco', email: 'm.rossi@example.ch', phone: '079 456 78 90', since: '15.06.2026' },
+    { id: 'eb-p2', role: 'Sachbearbeiter', roleType: 'internal', name: 'Huber Peter', organization: 'Einwohnerdienste', email: 'p.huber@gemeinde.ch', phone: '044 333 44 55', since: '15.06.2026' },
+    { id: 'eb-p3', role: 'Sprachschule', roleType: 'external', name: 'Sprachschule Dorfname', organization: 'Sprachschule Dorfname GmbH', email: 'info@sprachschule.ch', since: '20.06.2026' },
+    { id: 'eb-p4', role: 'Einbürgerungskommission', roleType: 'authority', name: 'Einbürgerungskommission', organization: 'Gemeinde Dorfname', since: '15.06.2026' },
   ],
 };
 
 const DOSSIER_GEMEINDERAT: Dossier = {
-  id: '4', number: '2025-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse',
+  id: '4', number: '2026-0055', title: 'Anfrage Tempo-30-Zone Schulweg Birkenstrasse',
   processId: 'inst-dossier-gr',
   serviceRequest: {
-    id: 'sr-4', portalFormTitle: 'Anfrage an den Gemeinderat', submittedDate: '01.03.2025', submittedBy: 'Brunner Lisa', email: 'l.brunner@example.ch',
+    id: 'sr-4', portalFormTitle: 'Anfrage an den Gemeinderat', submittedDate: '01.08.2026', submittedBy: 'Brunner Lisa', email: 'l.brunner@example.ch',
     status: 'in-bearbeitung', portalStatus: 'Ihre Anfrage wird dem zuständigen Ressort zugewiesen',
     messages: [
-      { id: 'm30', date: '01.03.2025 12:00', author: 'System', direction: 'to-citizen', text: 'Ihre Anfrage an den Gemeinderat wurde erfolgreich eingereicht.', read: true },
-      { id: 'm31', date: '03.03.2025 08:30', author: 'Schmid Andrea', direction: 'to-citizen', text: 'Guten Tag Frau Brunner, Ihre Anfrage wurde registriert und wird dem Ressort Verkehr zugewiesen.', read: true },
+      { id: 'm30', date: '01.08.2026 12:00', author: 'System', direction: 'to-citizen', text: 'Ihre Anfrage an den Gemeinderat wurde erfolgreich eingereicht.', read: true },
+      { id: 'm31', date: '03.08.2026 08:30', author: 'Schmid Andrea', direction: 'to-citizen', text: 'Guten Tag Frau Brunner, Ihre Anfrage wurde registriert und wird dem Ressort Verkehr zugewiesen.', read: true },
     ],
     portalDocuments: [
-      { id: 'pd30', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_GR_2025-0055.pdf', direction: 'to-citizen', uploadDate: '01.03.2025' },
-      { id: 'pd31', name: 'Unterschriftensammlung', fileName: 'Unterschriften_Tempo30.pdf', direction: 'from-citizen', uploadDate: '01.03.2025', description: '45 Unterschriften Anwohner Birkenstrasse' },
+      { id: 'pd30', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_GR_2026-0055.pdf', direction: 'to-citizen', uploadDate: '01.08.2026' },
+      { id: 'pd31', name: 'Unterschriftensammlung', fileName: 'Unterschriften_Tempo30.pdf', direction: 'from-citizen', uploadDate: '01.08.2026', description: '45 Unterschriften Anwohner Birkenstrasse' },
     ],
     formData: [
       { label: 'Antragsteller:in', value: 'Brunner Lisa' },
@@ -2764,39 +3332,39 @@ const DOSSIER_GEMEINDERAT: Dossier = {
     ],
   },
   notes: [
-    { id: 'gr-n1', date: '01.03.2025 12:15', author: 'Schmid Andrea', subject: 'Anfrage eingegangen', text: 'Anfrage von Brunner Lisa betreffend Tempo-30-Zone Birkenstrasse. 45 Unterschriften beigelegt.', visibility: 'intern' },
-    { id: 'gr-n2', date: '03.03.2025 09:00', author: 'Schmid Andrea', text: 'Triage: Zuständig ist Ressort Verkehr & Infrastruktur (Meier Hans).', visibility: 'intern' },
+    { id: 'gr-n1', date: '01.08.2026 12:15', author: 'Schmid Andrea', subject: 'Anfrage eingegangen', text: 'Anfrage von Brunner Lisa betreffend Tempo-30-Zone Birkenstrasse. 45 Unterschriften beigelegt.', visibility: 'intern' },
+    { id: 'gr-n2', date: '03.08.2026 09:00', author: 'Schmid Andrea', text: 'Triage: Zuständig ist Ressort Verkehr & Infrastruktur (Meier Hans).', visibility: 'intern' },
   ],
   participants: [
-    { id: 'gr-p1', role: 'Antragstellerin', roleType: 'primary', name: 'Brunner Lisa', email: 'l.brunner@example.ch', since: '01.03.2025' },
-    { id: 'gr-p2', role: 'Gemeindeschreiberin', roleType: 'internal', name: 'Schmid Andrea', organization: 'Gemeindekanzlei', email: 'a.schmid@gemeinde.ch', phone: '044 555 66 77', since: '01.03.2025' },
-    { id: 'gr-p3', role: 'Ressort Verkehr', roleType: 'internal', name: 'Meier Hans', organization: 'Gemeinderat', email: 'h.meier@gemeinde.ch', since: '03.03.2025' },
-    { id: 'gr-p4', role: 'Tiefbauamt', roleType: 'authority', name: 'Tiefbauamt Gemeinde', organization: 'Tiefbauamt', since: '03.03.2025' },
+    { id: 'gr-p1', role: 'Antragstellerin', roleType: 'primary', name: 'Brunner Lisa', email: 'l.brunner@example.ch', since: '01.08.2026' },
+    { id: 'gr-p2', role: 'Gemeindeschreiberin', roleType: 'internal', name: 'Schmid Andrea', organization: 'Gemeindekanzlei', email: 'a.schmid@gemeinde.ch', phone: '044 555 66 77', since: '01.08.2026' },
+    { id: 'gr-p3', role: 'Ressort Verkehr', roleType: 'internal', name: 'Meier Hans', organization: 'Gemeinderat', email: 'h.meier@gemeinde.ch', since: '03.08.2026' },
+    { id: 'gr-p4', role: 'Tiefbauamt', roleType: 'authority', name: 'Tiefbauamt Gemeinde', organization: 'Tiefbauamt', since: '03.08.2026' },
   ],
 };
 
 const DOSSIER_VERANSTALTUNG: Dossier = {
-  id: '5', number: '2025-0071', title: 'Dorffest Sommer 2025',
+  id: '5', number: '2026-0071', title: 'Dorffest Sommer 2027',
   processId: 'inst-dossier-va',
   serviceRequest: {
-    id: 'sr-5', portalFormTitle: 'Veranstaltungsbewilligung beantragen', submittedDate: '20.02.2025', submittedBy: 'Steiner Anna', email: 'a.steiner@turnverein.ch',
+    id: 'sr-5', portalFormTitle: 'Veranstaltungsbewilligung beantragen', submittedDate: '20.07.2026', submittedBy: 'Steiner Anna', email: 'a.steiner@turnverein.ch',
     status: 'in-bearbeitung', portalStatus: 'Fachstellen werden konsultiert',
     messages: [
-      { id: 'm40', date: '20.02.2025 14:00', author: 'System', direction: 'to-citizen', text: 'Ihr Antrag auf Veranstaltungsbewilligung wurde eingereicht.', read: true },
-      { id: 'm41', date: '22.02.2025 09:00', author: 'Frei Barbara', direction: 'to-citizen', text: 'Guten Tag Frau Steiner, könnten Sie bitte noch ein detailliertes Sicherheitskonzept nachreichen? Dieses benötigen wir für die Fachstellen-Vernehmlassung.', read: true },
-      { id: 'm42', date: '25.02.2025 11:30', author: 'Steiner Anna', direction: 'from-citizen', text: 'Das Sicherheitskonzept habe ich hochgeladen. Bei Fragen stehe ich gerne zur Verfügung.', read: true },
+      { id: 'm40', date: '20.07.2026 14:00', author: 'System', direction: 'to-citizen', text: 'Ihr Antrag auf Veranstaltungsbewilligung wurde eingereicht.', read: true },
+      { id: 'm41', date: '22.07.2026 09:00', author: 'Frei Barbara', direction: 'to-citizen', text: 'Guten Tag Frau Steiner, könnten Sie bitte noch ein detailliertes Sicherheitskonzept nachreichen? Dieses benötigen wir für die Fachstellen-Vernehmlassung.', read: true },
+      { id: 'm42', date: '25.07.2026 11:30', author: 'Steiner Anna', direction: 'from-citizen', text: 'Das Sicherheitskonzept habe ich hochgeladen. Bei Fragen stehe ich gerne zur Verfügung.', read: true },
     ],
     portalDocuments: [
-      { id: 'pd40', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_VA_2025-0071.pdf', direction: 'to-citizen', uploadDate: '20.02.2025' },
-      { id: 'pd41', name: 'Veranstaltungskonzept', fileName: 'Konzept_Dorffest.pdf', direction: 'from-citizen', uploadDate: '20.02.2025' },
-      { id: 'pd42', name: 'Sicherheitskonzept', fileName: 'Sicherheit_Dorffest.pdf', direction: 'from-citizen', uploadDate: '25.02.2025', description: 'Nachreichung auf Anfrage' },
-      { id: 'pd43', name: 'Lageplan', fileName: 'Lageplan_Dorffest.pdf', direction: 'from-citizen', uploadDate: '20.02.2025' },
+      { id: 'pd40', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_VA_2026-0071.pdf', direction: 'to-citizen', uploadDate: '20.07.2026' },
+      { id: 'pd41', name: 'Veranstaltungskonzept', fileName: 'Konzept_Dorffest.pdf', direction: 'from-citizen', uploadDate: '20.07.2026' },
+      { id: 'pd42', name: 'Sicherheitskonzept', fileName: 'Sicherheit_Dorffest.pdf', direction: 'from-citizen', uploadDate: '25.07.2026', description: 'Nachreichung auf Anfrage' },
+      { id: 'pd43', name: 'Lageplan', fileName: 'Lageplan_Dorffest.pdf', direction: 'from-citizen', uploadDate: '20.07.2026' },
     ],
     formData: [
       { label: 'Veranstalter', value: 'Turnverein Dorfname' },
       { label: 'Kontaktperson', value: 'Steiner Anna' },
-      { label: 'Veranstaltung', value: 'Dorffest Sommer 2025' },
-      { label: 'Datum', value: '21.06.2025 – 22.06.2025' },
+      { label: 'Veranstaltung', value: 'Dorffest Sommer 2027' },
+      { label: 'Datum', value: '19.06.2027 bis 20.06.2027' },
       { label: 'Ort', value: 'Dorfplatz & Gemeindewiese' },
       { label: 'Erwartete Besucherzahl', value: 'ca. 500' },
       { label: 'Alkoholausschank', value: 'Ja (Festwirtschaft)' },
@@ -2804,35 +3372,35 @@ const DOSSIER_VERANSTALTUNG: Dossier = {
     ],
   },
   notes: [
-    { id: 'va-n1', date: '20.02.2025 14:30', author: 'Frei Barbara', subject: 'Gesuch Dorffest', text: 'Gesuch für Dorffest Sommer 2025 eingegangen. Turnverein Dorfname, ca. 500 Besucher erwartet. Sicherheitskonzept fehlt noch.', visibility: 'intern' },
-    { id: 'va-n2', date: '22.02.2025 09:15', author: 'Frei Barbara', text: 'Sicherheitskonzept per Portal nachgefordert.', visibility: 'intern' },
-    { id: 'va-n3', date: '28.02.2025 16:00', author: 'Frei Barbara', subject: 'Risikostufe Mittel', text: 'Risikobeurteilung abgeschlossen: Stufe Mittel. Fachstellen Feuerpolizei, Kantonspolizei, Lebensmittelkontrolle und Lärmschutz werden konsultiert.', visibility: 'intern' },
+    { id: 'va-n1', date: '20.07.2026 14:30', author: 'Frei Barbara', subject: 'Gesuch Dorffest', text: 'Gesuch für Dorffest Sommer 2027 eingegangen. Turnverein Dorfname, ca. 500 Besucher erwartet. Sicherheitskonzept fehlt noch.', visibility: 'intern' },
+    { id: 'va-n2', date: '22.07.2026 09:15', author: 'Frei Barbara', text: 'Sicherheitskonzept per Portal nachgefordert.', visibility: 'intern' },
+    { id: 'va-n3', date: '28.07.2026 16:00', author: 'Frei Barbara', subject: 'Risikostufe Mittel', text: 'Risikobeurteilung abgeschlossen: Stufe Mittel. Fachstellen Feuerpolizei, Kantonspolizei, Lebensmittelkontrolle und Lärmschutz werden konsultiert.', visibility: 'intern' },
   ],
   participants: [
-    { id: 'va-p1', role: 'Veranstalter', roleType: 'primary', name: 'Steiner Anna', organization: 'Turnverein Dorfname', email: 'a.steiner@turnverein.ch', phone: '079 888 99 00', since: '20.02.2025' },
-    { id: 'va-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Frei Barbara', organization: 'Gemeindekanzlei', email: 'b.frei@gemeinde.ch', phone: '044 777 88 99', since: '20.02.2025' },
-    { id: 'va-p3', role: 'Feuerpolizei', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '28.02.2025' },
-    { id: 'va-p4', role: 'Kantonspolizei', roleType: 'authority', name: 'Kantonspolizei', organization: 'Kantonspolizei', since: '28.02.2025' },
-    { id: 'va-p5', role: 'Lebensmittelkontrolle', roleType: 'authority', name: 'Lebensmittelbehörde', organization: 'Kantonales Labor', since: '28.02.2025' },
-    { id: 'va-p6', role: 'Lärmschutz', roleType: 'authority', name: 'Umweltamt', organization: 'Umweltamt Kanton', since: '28.02.2025' },
+    { id: 'va-p1', role: 'Veranstalter', roleType: 'primary', name: 'Steiner Anna', organization: 'Turnverein Dorfname', email: 'a.steiner@turnverein.ch', phone: '079 888 99 00', since: '20.07.2026' },
+    { id: 'va-p2', role: 'Sachbearbeiterin', roleType: 'internal', name: 'Frei Barbara', organization: 'Gemeindekanzlei', email: 'b.frei@gemeinde.ch', phone: '044 777 88 99', since: '20.07.2026' },
+    { id: 'va-p3', role: 'Feuerpolizei', roleType: 'authority', name: 'Feuerpolizei Kanton', organization: 'Gebäudeversicherung', since: '28.07.2026' },
+    { id: 'va-p4', role: 'Kantonspolizei', roleType: 'authority', name: 'Kantonspolizei', organization: 'Kantonspolizei', since: '28.07.2026' },
+    { id: 'va-p5', role: 'Lebensmittelkontrolle', roleType: 'authority', name: 'Lebensmittelbehörde', organization: 'Kantonales Labor', since: '28.07.2026' },
+    { id: 'va-p6', role: 'Lärmschutz', roleType: 'authority', name: 'Umweltamt', organization: 'Umweltamt Kanton', since: '28.07.2026' },
   ],
 };
 
 const DOSSIER_KESB: Dossier = {
-  id: '6', number: '2025-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider',
+  id: '6', number: '2026-KES-0012', title: 'KESB-Gefahrenmeldung Fam. Schneider',
   processId: 'inst-dossier-kesb',
   serviceRequest: {
-    id: 'sr-6', portalFormTitle: 'KESB-Gefahrenmeldung einreichen', submittedDate: '05.03.2025', submittedBy: 'Widmer Ruth (Schule Dorfname)', email: 'r.widmer@schule-dorf.ch',
+    id: 'sr-6', portalFormTitle: 'KESB-Gefahrenmeldung einreichen', submittedDate: '05.08.2026', submittedBy: 'Widmer Ruth (Schule Dorfname)', email: 'r.widmer@schule-dorf.ch',
     status: 'in-bearbeitung', portalStatus: 'Abklärung eingeleitet',
     messages: [
-      { id: 'm50', date: '05.03.2025 08:00', author: 'System', direction: 'to-citizen', text: 'Ihre Gefahrenmeldung wurde vertraulich entgegengenommen.', read: true },
-      { id: 'm51', date: '05.03.2025 10:30', author: 'Dr. Gerber Nicole', direction: 'to-citizen', text: 'Frau Widmer, vielen Dank für Ihre Meldung. Die Dringlichkeit wurde als hoch eingestuft. Wir haben umgehend eine Abklärung eingeleitet. Für Rückfragen erreichen Sie mich unter 044 987 65 43.', read: true },
-      { id: 'm52', date: '06.03.2025 14:00', author: 'Widmer Ruth', direction: 'from-citizen', text: 'Ich habe noch einen ergänzenden Bericht der Schulleitung hochgeladen.', read: true },
+      { id: 'm50', date: '05.08.2026 08:00', author: 'System', direction: 'to-citizen', text: 'Ihre Gefahrenmeldung wurde vertraulich entgegengenommen.', read: true },
+      { id: 'm51', date: '05.08.2026 10:30', author: 'Dr. Gerber Nicole', direction: 'to-citizen', text: 'Frau Widmer, vielen Dank für Ihre Meldung. Die Dringlichkeit wurde als hoch eingestuft. Wir haben umgehend eine Abklärung eingeleitet. Für Rückfragen erreichen Sie mich unter 044 987 65 43.', read: true },
+      { id: 'm52', date: '06.08.2026 14:00', author: 'Widmer Ruth', direction: 'from-citizen', text: 'Ich habe noch einen ergänzenden Bericht der Schulleitung hochgeladen.', read: true },
     ],
     portalDocuments: [
-      { id: 'pd50', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_KES_2025-0012.pdf', direction: 'to-citizen', uploadDate: '05.03.2025', description: 'Vertrauliche Bestätigung' },
-      { id: 'pd51', name: 'Gefahrenmeldung (Formular)', fileName: 'Gefahrenmeldung_anonym.pdf', direction: 'from-citizen', uploadDate: '05.03.2025' },
-      { id: 'pd52', name: 'Ergänzungsbericht Schule', fileName: 'Bericht_Schulleitung.pdf', direction: 'from-citizen', uploadDate: '06.03.2025', description: 'Bericht der Schulleitung mit Beobachtungen' },
+      { id: 'pd50', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_KES_2026-0012.pdf', direction: 'to-citizen', uploadDate: '05.08.2026', description: 'Vertrauliche Bestätigung' },
+      { id: 'pd51', name: 'Gefahrenmeldung (Formular)', fileName: 'Gefahrenmeldung_anonym.pdf', direction: 'from-citizen', uploadDate: '05.08.2026' },
+      { id: 'pd52', name: 'Ergänzungsbericht Schule', fileName: 'Bericht_Schulleitung.pdf', direction: 'from-citizen', uploadDate: '06.08.2026', description: 'Bericht der Schulleitung mit Beobachtungen' },
     ],
     formData: [
       { label: 'Meldende Person', value: 'Widmer Ruth, Klassenlehrerin' },
@@ -2844,15 +3412,101 @@ const DOSSIER_KESB: Dossier = {
     ],
   },
   notes: [
-    { id: 'kes-n1', date: '05.03.2025 08:30', author: 'Dr. Gerber Nicole', subject: 'Gefahrenmeldung eingegangen', text: 'Gefahrenmeldung von Klassenlehrerin Widmer Ruth (Primarschule Dorfname). Verdacht auf Vernachlässigung Kind S. (8 Jahre). Dringlichkeit: Hoch.', visibility: 'intern' },
-    { id: 'kes-n2', date: '05.03.2025 11:00', author: 'Dr. Gerber Nicole', text: 'Sofortmassnahmen nicht nötig gemäss Ersteinschätzung. Abklärungsauftrag wird erteilt.', visibility: 'intern' },
-    { id: 'kes-n3', date: '06.03.2025 14:15', author: 'Dr. Gerber Nicole', text: 'Ergänzungsbericht der Schulleitung via Portal eingegangen. Bestätigt regelmässiges Fehlen und Rückzugsverhalten.', visibility: 'intern' },
+    { id: 'kes-n1', date: '05.08.2026 08:30', author: 'Dr. Gerber Nicole', subject: 'Gefahrenmeldung eingegangen', text: 'Gefahrenmeldung von Klassenlehrerin Widmer Ruth (Primarschule Dorfname). Verdacht auf Vernachlässigung Kind S. (8 Jahre). Dringlichkeit: Hoch.', visibility: 'intern' },
+    { id: 'kes-n2', date: '05.08.2026 11:00', author: 'Dr. Gerber Nicole', text: 'Sofortmassnahmen nicht nötig gemäss Ersteinschätzung. Abklärungsauftrag wird erteilt.', visibility: 'intern' },
+    { id: 'kes-n3', date: '06.08.2026 14:15', author: 'Dr. Gerber Nicole', text: 'Ergänzungsbericht der Schulleitung via Portal eingegangen. Bestätigt regelmässiges Fehlen und Rückzugsverhalten.', visibility: 'intern' },
   ],
   participants: [
-    { id: 'kes-p1', role: 'Meldende Person', roleType: 'external', name: 'Widmer Ruth', organization: 'Primarschule Dorfname', email: 'r.widmer@schule-dorf.ch', since: '05.03.2025' },
-    { id: 'kes-p2', role: 'KESB-Präsidentin', roleType: 'internal', name: 'Dr. Gerber Nicole', organization: 'KESB Region', email: 'n.gerber@kesb.ch', phone: '044 987 65 43', since: '05.03.2025' },
-    { id: 'kes-p3', role: 'Betroffene Familie', roleType: 'primary', name: 'Fam. Schneider', since: '05.03.2025' },
-    { id: 'kes-p4', role: 'Sekretariat KESB', roleType: 'internal', name: 'Sekretariat KESB', organization: 'KESB Region', since: '05.03.2025' },
+    { id: 'kes-p1', role: 'Meldende Person', roleType: 'external', name: 'Widmer Ruth', organization: 'Primarschule Dorfname', email: 'r.widmer@schule-dorf.ch', since: '05.08.2026' },
+    { id: 'kes-p2', role: 'KESB-Präsidentin', roleType: 'internal', name: 'Dr. Gerber Nicole', organization: 'KESB Region', email: 'n.gerber@kesb.ch', phone: '044 987 65 43', since: '05.08.2026' },
+    { id: 'kes-p3', role: 'Betroffene Familie', roleType: 'primary', name: 'Fam. Schneider', since: '05.08.2026' },
+    { id: 'kes-p4', role: 'Sekretariat KESB', roleType: 'internal', name: 'Sekretariat KESB', organization: 'KESB Region', since: '05.08.2026' },
+  ],
+};
+
+const DOSSIER_SCHULEINTRITT: Dossier = {
+  id: '7', number: '2026-0088', title: 'Schuleintritt Ademi Elira (Schuljahr 2027/28)',
+  processId: 'inst-dossier-se',
+  serviceRequest: {
+    id: 'sr-7', portalFormTitle: 'Schuleintritt anmelden', submittedDate: '03.08.2026', submittedBy: 'Ademi Fatime', email: 'f.ademi@example.ch',
+    status: 'in-bearbeitung', portalStatus: 'In Abklärung',
+    messages: [
+      { id: 'm60', date: '03.08.2026 09:10', author: 'System', direction: 'to-citizen', text: 'Die Anmeldung für den Schuleintritt Ihres Kindes ist eingegangen.', read: true },
+      { id: 'm61', date: '12.08.2026 10:30', author: 'Meier Sandra', direction: 'to-citizen', text: 'Guten Tag Frau Ademi, für die Beurteilung Ihres Rückstellungsantrags brauchen wir Ihr Einverständnis für eine schulpsychologische Abklärung. Das Formular liegt im Portal bereit.', read: true },
+      { id: 'm62', date: '17.08.2026 16:45', author: 'Ademi Fatime', direction: 'from-citizen', text: 'Das Einverständnis habe ich unterschrieben und hochgeladen. Wann findet die Abklärung statt?', read: true },
+      { id: 'm63', date: '19.08.2026 08:20', author: 'Meier Sandra', direction: 'to-citizen', text: 'Der Schulpsychologische Dienst meldet sich direkt bei Ihnen für einen Termin. Der Entscheid fällt an der Sitzung der Bildungskommission vom 21.10.2026.', read: false },
+    ],
+    portalDocuments: [
+      { id: 'pd60', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_SE_2026-0088.pdf', direction: 'to-citizen', uploadDate: '03.08.2026' },
+      { id: 'pd61', name: 'Anmeldeformular Schuleintritt', fileName: 'Anmeldung_Schuleintritt_Ademi.pdf', direction: 'from-citizen', uploadDate: '03.08.2026' },
+      { id: 'pd62', name: 'Bericht Kindergarten', fileName: 'Bericht_KG_Ademi.pdf', direction: 'from-citizen', uploadDate: '10.08.2026', description: 'Beurteilung der Kindergartenlehrperson' },
+      { id: 'pd63', name: 'Einverständniserklärung Abklärung', fileName: 'Einverstaendnis_SPD_Ademi.pdf', direction: 'from-citizen', uploadDate: '17.08.2026', description: 'Einverständnis der Erziehungsberechtigten' },
+    ],
+    formData: [
+      { label: 'Kind', value: 'Ademi Elira' },
+      { label: 'Geburtsdatum', value: '14.06.2021' },
+      { label: 'Eintritt per Schuljahr', value: '2027/28' },
+      { label: 'Schulkreis', value: 'Dorf-Ost' },
+      { label: 'Antrag der Eltern', value: 'Rückstellung um ein Jahr' },
+    ],
+  },
+  notes: [
+    { id: 'se-n1', date: '03.08.2026 09:30', author: 'Meier Sandra', subject: 'Anmeldung mit Rückstellungsantrag', text: 'Anmeldung Ademi Elira eingegangen. Die Eltern beantragen eine Rückstellung um ein Jahr. Der Stichtag 31.07. ist erfüllt, das Kind wäre regulär einzuschulen. Vertiefte Abklärung nötig.', visibility: 'intern' },
+    { id: 'se-n2', date: '12.08.2026 11:00', author: 'Meier Sandra', text: 'Bericht der Kindergartenlehrperson liegt vor: sprachliche Entwicklung altersgemäss, Ausdauer und Selbstständigkeit noch schwach. Der Kindergarten empfiehlt, eine Rückstellung zu prüfen.', visibility: 'intern' },
+    { id: 'se-n3', date: '19.08.2026 08:30', author: 'Vogt Daniel', subject: 'Traktandierung Bildungskommission', text: 'Geschäft für die Sitzung der Bildungskommission vom 21.10.2026 vorgemerkt. Bis dahin müssen der SPD-Bericht und die schulärztliche Untersuchung vorliegen.', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'se-p1', role: 'Erziehungsberechtigte', roleType: 'primary', name: 'Ademi Fatime', email: 'f.ademi@example.ch', phone: '079 234 56 78', since: '03.08.2026' },
+    { id: 'se-p2', role: 'Leiterin Schulverwaltung', roleType: 'internal', name: 'Meier Sandra', organization: 'Schulverwaltung Dorfname', email: 's.meier@schule-dorf.ch', phone: '044 222 33 44', since: '03.08.2026' },
+    { id: 'se-p3', role: 'Schulleitung', roleType: 'internal', name: 'Vogt Daniel', organization: 'Primarschule Dorf-Ost', email: 'd.vogt@schule-dorf.ch', since: '12.08.2026' },
+    { id: 'se-p4', role: 'Kindergartenlehrperson', roleType: 'internal', name: 'Brunner Silvia', organization: 'Kindergarten Dorf-Ost', since: '10.08.2026' },
+    { id: 'se-p5', role: 'Schulpsychologischer Dienst', roleType: 'authority', name: 'Dr. Lang Miriam', organization: 'SPD Region', email: 'm.lang@spd-region.ch', since: '12.08.2026' },
+    { id: 'se-p6', role: 'Bildungskommission', roleType: 'authority', name: 'Bildungskommission', organization: 'Gemeinde Dorfname', since: '19.08.2026' },
+  ],
+};
+
+const DOSSIER_SONDERPAED: Dossier = {
+  id: '8', number: '2026-0094', title: 'Sonderpädagogische Massnahme Bucher Tim (3. Klasse)',
+  processId: 'inst-dossier-sp',
+  serviceRequest: {
+    id: 'sr-8', portalFormTitle: 'Sonderpädagogische Massnahme beantragen', submittedDate: '29.06.2026', submittedBy: 'Widmer Ruth (Primarschule Dorf-Ost)', email: 'r.widmer@schule-dorf.ch',
+    status: 'in-bearbeitung', portalStatus: 'Fachberichte ausstehend',
+    messages: [
+      { id: 'm70', date: '29.06.2026 08:15', author: 'System', direction: 'to-citizen', text: 'Ihr Antrag auf eine sonderpädagogische Massnahme ist eingegangen.', read: true },
+      { id: 'm71', date: '08.07.2026 14:00', author: 'Vogt Daniel', direction: 'to-citizen', text: 'Guten Tag Frau Widmer, die Triage ist abgeschlossen. Der Schulpsychologische Dienst führt eine Abklärung durch, das Einverständnis der Eltern liegt vor.', read: true },
+      { id: 'm72', date: '07.08.2026 17:20', author: 'Widmer Ruth', direction: 'from-citizen', text: 'Die Abklärung ist erfolgt. Ich habe meine Unterrichtsbeobachtungen ergänzend hochgeladen.', read: true },
+      { id: 'm73', date: '21.08.2026 09:40', author: 'Vogt Daniel', direction: 'to-citizen', text: 'Der SPD-Bericht liegt vor und empfiehlt integrative Förderung mit logopädischer Therapie. Der logopädische Bericht fehlt noch. Der Entscheid fällt an der Bildungskommission vom 21.10.2026.', read: false },
+    ],
+    portalDocuments: [
+      { id: 'pd70', name: 'Eingangsbestätigung', fileName: 'Bestaetigung_SPM_2026-0094.pdf', direction: 'to-citizen', uploadDate: '29.06.2026' },
+      { id: 'pd71', name: 'Antragsformular', fileName: 'Antrag_SPM_Bucher.pdf', direction: 'from-citizen', uploadDate: '29.06.2026' },
+      { id: 'pd72', name: 'Einverständnis Erziehungsberechtigte', fileName: 'Einverstaendnis_Eltern_Bucher.pdf', direction: 'from-citizen', uploadDate: '29.06.2026' },
+      { id: 'pd73', name: 'Unterrichtsbeobachtungen', fileName: 'Beobachtungen_Widmer.pdf', direction: 'from-citizen', uploadDate: '07.08.2026', description: 'Ergänzung der Klassenlehrperson' },
+      { id: 'pd74', name: 'SPD-Bericht', fileName: 'SPD_Bericht_Bucher.pdf', direction: 'to-citizen', uploadDate: '21.08.2026', description: 'Schulpsychologischer Abklärungsbericht mit Empfehlung' },
+    ],
+    formData: [
+      { label: 'Kind', value: 'Bucher Tim' },
+      { label: 'Geburtsdatum', value: '02.09.2017' },
+      { label: 'Klasse', value: '3a, Primarschule Dorf-Ost' },
+      { label: 'Antragstellende Person', value: 'Widmer Ruth, Klassenlehrperson' },
+      { label: 'Beobachteter Förderbedarf', value: 'Lesen und Schreiben, Hinweise auf eine Sprachentwicklungsstörung' },
+      { label: 'Einverständnis Erziehungsberechtigte', value: 'Liegt vor' },
+    ],
+  },
+  notes: [
+    { id: 'sp-n1', date: '29.06.2026 08:45', author: 'Vogt Daniel', subject: 'Antrag der Klassenlehrperson', text: 'Antrag der Klassenlehrperson für Tim Bucher (3a). Das schriftliche Einverständnis der Eltern liegt bei. Die klasseninterne Förderung läuft seit dem Schuljahr 2025/26 ohne ausreichende Wirkung.', visibility: 'intern' },
+    { id: 'sp-n2', date: '08.07.2026 14:15', author: 'Vogt Daniel', text: 'Triage: Abklärung durch den Schulpsychologischen Dienst, zusätzlich eine logopädische Abklärung. Zuständig ist die Bildungskommission, weil eine verstärkte Massnahme im Raum steht.', visibility: 'intern' },
+    { id: 'sp-n3', date: '21.08.2026 10:00', author: 'Vogt Daniel', subject: 'SPD-Bericht eingegangen', text: 'Der SPD empfiehlt integrative Förderung (2 Lektionen) plus logopädische Therapie, befristet auf ein Schuljahr mit Überprüfung. Kostenfolge rund CHF 12000 pro Schuljahr. Der logopädische Bericht ist ausstehend.', visibility: 'intern' },
+    { id: 'sp-n4', date: '24.08.2026 09:00', author: 'Meier Sandra', text: 'Geschäft für die Bildungskommission vom 21.10.2026 traktandiert. Der logopädische Bericht muss bis 17.09.2026 vorliegen, sonst fällt das Geschäft auf die Dezembersitzung.', visibility: 'intern' },
+  ],
+  participants: [
+    { id: 'sp-p1', role: 'Betroffenes Kind', roleType: 'primary', name: 'Bucher Tim', organization: 'Primarschule Dorf-Ost, Klasse 3a', since: '29.06.2026' },
+    { id: 'sp-p2', role: 'Erziehungsberechtigte', roleType: 'external', name: 'Bucher Andrea und Bucher Marc', email: 'a.bucher@example.ch', phone: '079 345 67 89', since: '29.06.2026' },
+    { id: 'sp-p3', role: 'Klassenlehrperson', roleType: 'internal', name: 'Widmer Ruth', organization: 'Primarschule Dorf-Ost', email: 'r.widmer@schule-dorf.ch', since: '29.06.2026' },
+    { id: 'sp-p4', role: 'Schulleitung', roleType: 'internal', name: 'Vogt Daniel', organization: 'Primarschule Dorf-Ost', email: 'd.vogt@schule-dorf.ch', phone: '044 222 33 55', since: '29.06.2026' },
+    { id: 'sp-p5', role: 'Schulpsychologischer Dienst', roleType: 'authority', name: 'Dr. Lang Miriam', organization: 'SPD Region', email: 'm.lang@spd-region.ch', since: '08.07.2026' },
+    { id: 'sp-p6', role: 'Logopädischer Dienst', roleType: 'authority', name: 'Logopädischer Dienst', organization: 'Logopädie Region', since: '08.07.2026' },
+    { id: 'sp-p7', role: 'Bildungskommission', roleType: 'authority', name: 'Bildungskommission', organization: 'Gemeinde Dorfname', since: '24.08.2026' },
   ],
 };
 
@@ -2863,6 +3517,8 @@ const ALL_DOSSIERS: Dossier[] = [
   DOSSIER_GEMEINDERAT,
   DOSSIER_VERANSTALTUNG,
   DOSSIER_KESB,
+  DOSSIER_SCHULEINTRITT,
+  DOSSIER_SONDERPAED,
 ];
 
 // ============================================================
@@ -2871,9 +3527,9 @@ const ALL_DOSSIERS: Dossier[] = [
 
 const SITZUNG_GR: Sitzung = {
   id: 'sitz-gr-1',
-  number: 'GR-2025-04',
-  title: '5. Gemeinderatssitzung 2025',
-  date: '15.04.2025',
+  number: 'GR-2026-10',
+  title: '10. Gemeinderatssitzung 2026',
+  date: '15.10.2026',
   location: 'Gemeindehaus, Sitzungszimmer 1. OG',
   chairperson: 'Gemeindepräsident Müller Kurt',
   organization: 'Gemeinderat Dorfname',
@@ -2893,14 +3549,14 @@ const SITZUNG_GR: Sitzung = {
       status: 'offen',
     },
     {
-      id: 'trakt-3', number: '3', title: 'Tempo-30-Zone Schulweg Birkenstrasse — Stellungnahme & Beschluss',
+      id: 'trakt-3', number: '3', title: 'Tempo-30-Zone Schulweg Birkenstrasse: Stellungnahme & Beschluss',
       category: 'Verkehr & Infrastruktur',
       contextLinks: [G('4')],
       status: 'offen',
       processStepIds: [{ processId: 'proc-gr', stepId: 'gr-5' }, { processId: 'proc-gr', stepId: 'gr-6' }],
     },
     {
-      id: 'trakt-4', number: '4', title: 'Dorffest Sommer 2025 — Veranstaltungsbewilligung',
+      id: 'trakt-4', number: '4', title: 'Dorffest Sommer 2027: Veranstaltungsbewilligung',
       category: 'Bewilligungen',
       contextLinks: [G('5')],
       status: 'offen',
@@ -2921,18 +3577,18 @@ const SITZUNG_GR: Sitzung = {
     { id: 'sp-5', name: 'Fischer Elisabeth', role: 'Ressort Bildung', organization: 'Gemeinderat', status: 'eingeladen' },
   ],
   documents: [
-    { id: 'sd-1', name: 'Einladung GR-Sitzung 15.04.2025', fileName: 'Einladung_GR_2025-04.pdf', type: 'einladung', uploadDate: '08.04.2025' },
-    { id: 'sd-2', name: 'Protokoll 4. Sitzung', fileName: 'Protokoll_GR_2025-03.pdf', type: 'protokoll', uploadDate: '25.03.2025' },
-    { id: 'sd-3', name: 'Stellungnahme Tempo-30 Birkenstrasse', fileName: 'Stellungnahme_T30.pdf', type: 'traktandum', uploadDate: '10.04.2025' },
-    { id: 'sd-4', name: 'Gesuch Dorffest inkl. Fachberichte', fileName: 'Dorffest_Unterlagen.pdf', type: 'traktandum', uploadDate: '10.04.2025' },
+    { id: 'sd-1', name: 'Einladung GR-Sitzung 15.10.2026', fileName: 'Einladung_GR_2026-10.pdf', type: 'einladung', uploadDate: '08.10.2026' },
+    { id: 'sd-2', name: 'Protokoll 9. Sitzung', fileName: 'Protokoll_GR_2026-09.pdf', type: 'protokoll', uploadDate: '25.09.2026' },
+    { id: 'sd-3', name: 'Stellungnahme Tempo-30 Birkenstrasse', fileName: 'Stellungnahme_T30.pdf', type: 'traktandum', uploadDate: '10.10.2026' },
+    { id: 'sd-4', name: 'Gesuch Dorffest inkl. Fachberichte', fileName: 'Dorffest_Unterlagen.pdf', type: 'traktandum', uploadDate: '10.10.2026' },
   ],
 };
 
 const SITZUNG_GV: Sitzung = {
   id: 'sitz-gv-1',
-  number: 'GV-2025-06',
-  title: 'Gemeindeversammlung Sommer 2025',
-  date: '20.06.2025',
+  number: 'GV-2027-06',
+  title: 'Gemeindeversammlung Sommer 2027',
+  date: '18.06.2027',
   location: 'Mehrzweckhalle Dorfname',
   chairperson: 'Gemeindepräsident Müller Kurt',
   organization: 'Gemeinde Dorfname',
@@ -2970,15 +3626,15 @@ const SITZUNG_GV: Sitzung = {
     { id: 'sp-gv-2', name: 'Schmid Andrea', role: 'Gemeindeschreiberin', organization: 'Gemeindekanzlei', status: 'zugesagt' },
   ],
   documents: [
-    { id: 'sd-gv-1', name: 'Einladung Gemeindeversammlung', fileName: 'Einladung_GV_2025-06.pdf', type: 'einladung', uploadDate: '01.06.2025' },
+    { id: 'sd-gv-1', name: 'Einladung Gemeindeversammlung', fileName: 'Einladung_GV_2027-06.pdf', type: 'einladung', uploadDate: '28.05.2027' },
   ],
 };
 
 const SITZUNG_KESB: Sitzung = {
   id: 'sitz-kesb-1',
-  number: 'KESB-2025-12',
+  number: 'KESB-2026-16',
   title: 'KESB-Spruchkörpersitzung',
-  date: '28.03.2025',
+  date: '17.11.2026',
   location: 'KESB-Geschäftsstelle, Raum 3',
   chairperson: 'Dr. Gerber Nicole',
   organization: 'KESB Region',
@@ -2992,7 +3648,7 @@ const SITZUNG_KESB: Sitzung = {
       status: 'offen',
     },
     {
-      id: 'trakt-k-2', number: '2', title: 'Gefahrenmeldung Fam. Schneider — Entscheid',
+      id: 'trakt-k-2', number: '2', title: 'Gefahrenmeldung Fam. Schneider: Entscheid',
       category: 'Kindesschutz',
       contextLinks: [G('6')],
       status: 'offen',
@@ -3011,12 +3667,79 @@ const SITZUNG_KESB: Sitzung = {
     { id: 'sp-k-3', name: 'Dr. Roth Sandra', role: 'Mitglied', organization: 'KESB Region', status: 'zugesagt' },
   ],
   documents: [
-    { id: 'sd-k-1', name: 'Traktandenliste KESB-2025-12', fileName: 'Traktanden_KESB_12.pdf', type: 'einladung', uploadDate: '25.03.2025' },
-    { id: 'sd-k-2', name: 'Abklärungsbericht Schneider (Entwurf)', fileName: 'Abklaerung_Schneider.pdf', type: 'traktandum', uploadDate: '26.03.2025' },
+    { id: 'sd-k-1', name: 'Traktandenliste KESB-2026-16', fileName: 'Traktanden_KESB_16.pdf', type: 'einladung', uploadDate: '12.11.2026' },
+    { id: 'sd-k-2', name: 'Abklärungsbericht Schneider (Entwurf)', fileName: 'Abklaerung_Schneider.pdf', type: 'traktandum', uploadDate: '13.11.2026' },
   ],
 };
 
-const ALL_SITZUNGEN: Sitzung[] = [SITZUNG_GR, SITZUNG_GV, SITZUNG_KESB];
+const SITZUNG_BK: Sitzung = {
+  id: 'sitz-bk-1',
+  number: 'BK-2026-05',
+  title: '5. Sitzung Bildungskommission 2026',
+  date: '21.10.2026',
+  location: 'Primarschule Dorf-Ost, Sitzungszimmer',
+  chairperson: 'Fischer Elisabeth, Ressort Bildung',
+  organization: 'Bildungskommission Dorfname',
+  frequency: 'Sechsmal jährlich',
+  status: 'geplant',
+  traktanden: [
+    {
+      id: 'trakt-bk-1', number: '1', title: 'Protokoll der letzten Sitzung',
+      category: 'Formelles',
+      contextLinks: [],
+      status: 'offen',
+    },
+    {
+      id: 'trakt-bk-2', number: '2', title: 'Mitteilungen der Schulleitung',
+      category: 'Formelles',
+      contextLinks: [],
+      status: 'offen',
+    },
+    {
+      id: 'trakt-bk-3', number: '3', title: 'Schuleintritt Ademi Elira: Rückstellungsantrag der Eltern',
+      category: 'Schuleintritte',
+      contextLinks: [G('7')],
+      status: 'offen',
+      processStepIds: [{ processId: 'proc-se', stepId: 'se-6' }],
+    },
+    {
+      id: 'trakt-bk-4', number: '4', title: 'Sonderpädagogische Massnahme Bucher Tim: Antrag integrative Förderung und Logopädie',
+      category: 'Sonderpädagogik',
+      contextLinks: [G('8')],
+      status: 'offen',
+      processStepIds: [{ processId: 'proc-sp', stepId: 'sp-7' }],
+    },
+    {
+      id: 'trakt-bk-5', number: '5', title: 'Schulraumplanung 2027 bis 2032: Zwischenbericht',
+      category: 'Schulraum',
+      contextLinks: [],
+      status: 'zur-kenntnis',
+    },
+    {
+      id: 'trakt-bk-6', number: '6', title: 'Verschiedenes',
+      category: 'Diverses',
+      contextLinks: [],
+      status: 'offen',
+    },
+  ],
+  participants: [
+    { id: 'bp-1', name: 'Fischer Elisabeth', role: 'Präsidentin, Ressort Bildung', organization: 'Gemeinderat', status: 'zugesagt' },
+    { id: 'bp-2', name: 'Vogt Daniel', role: 'Schulleiter', organization: 'Primarschule Dorf-Ost', status: 'zugesagt' },
+    { id: 'bp-3', name: 'Meier Sandra', role: 'Leiterin Schulverwaltung, Aktuarin', organization: 'Schulverwaltung Dorfname', status: 'zugesagt' },
+    { id: 'bp-4', name: 'Brunner Silvia', role: 'Vertretung Kindergarten', organization: 'Kindergarten Dorf-Ost', status: 'zugesagt' },
+    { id: 'bp-5', name: 'Dr. Lang Miriam', role: 'Schulpsychologischer Dienst', organization: 'SPD Region', status: 'eingeladen' },
+    { id: 'bp-6', name: 'Keller Andreas', role: 'Elternvertretung', organization: 'Elternrat Dorfname', status: 'eingeladen' },
+  ],
+  documents: [
+    { id: 'sd-bk-1', name: 'Einladung Bildungskommission 21.10.2026', fileName: 'Einladung_BK_2026-05.pdf', type: 'einladung', uploadDate: '14.10.2026' },
+    { id: 'sd-bk-2', name: 'Protokoll 4. Sitzung', fileName: 'Protokoll_BK_2026-04.pdf', type: 'protokoll', uploadDate: '08.09.2026' },
+    { id: 'sd-bk-3', name: 'Antrag Rückstellung Ademi inkl. Fachberichte', fileName: 'Antrag_Rueckstellung_Ademi.pdf', type: 'traktandum', uploadDate: '15.10.2026' },
+    { id: 'sd-bk-4', name: 'Antrag sonderpädagogische Massnahme Bucher', fileName: 'Antrag_SPM_Bucher_BK.pdf', type: 'traktandum', uploadDate: '15.10.2026' },
+    { id: 'sd-bk-5', name: 'Zwischenbericht Schulraumplanung 2027 bis 2032', fileName: 'Schulraumplanung_Zwischenbericht.pdf', type: 'beilage', uploadDate: '12.10.2026' },
+  ],
+};
+
+const ALL_SITZUNGEN: Sitzung[] = [SITZUNG_GR, SITZUNG_GV, SITZUNG_KESB, SITZUNG_BK];
 
 // ============================================================
 // INITIAL TABS
@@ -3024,6 +3747,6 @@ const ALL_SITZUNGEN: Sitzung[] = [SITZUNG_GR, SITZUNG_GV, SITZUNG_KESB];
 
 const INITIAL_TABS: AppTab[] = [
   { id: 'tab-proc-bau', type: 'prozess', referenceId: 'proc-bau', label: 'Baugesuchsverfahren' },
-  { id: 'tab-dos-1', type: 'geschaeft', referenceId: '1', label: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)', number: '2024-0009' },
-  { id: 'tab-sitz-gr-1', type: 'sitzung', referenceId: 'sitz-gr-1', label: '5. Gemeinderatssitzung 2025', number: 'GR-2025-04' },
+  { id: 'tab-dos-1', type: 'geschaeft', referenceId: '1', label: 'Umbau Gebäude (Heizungsänderung und Dachstockausbau)', number: '2026-0009' },
+  { id: 'tab-sitz-gr-1', type: 'sitzung', referenceId: 'sitz-gr-1', label: '10. Gemeinderatssitzung 2026', number: 'GR-2026-10' },
 ];
