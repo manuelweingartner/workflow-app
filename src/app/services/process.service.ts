@@ -844,9 +844,9 @@ function dataGapCsv(): string {
     'Egger Levin;innosolv.Contact=88220;Sorgerecht "ja" ohne Belegdokument;Anmeldung angreifbar;Belegdokument einfordern',
     'Marti Anouk;innosolv.Contact=88244;Sorgerecht "ja" ohne Belegdokument;Anmeldung angreifbar;Belegdokument einfordern',
     'Tanner Cyril;innosolv.Contact=88263;Keine Haushaltnummer geliefert;Wohnsituation unklar;Haushalt manuell erfassen',
-    'Frei Noah;innosolv.Contact=88223;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
-    'Keller Mia;innosolv.Contact=88238;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
-    'Steiner Lynn;innosolv.Contact=88261;Keine Mobilnummer;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+    'Frei Noah;innosolv.Contact=88223;Keine Klapp-tauglichen Kontaktdaten;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+    'Keller Mia;innosolv.Contact=88238;Keine Klapp-tauglichen Kontaktdaten;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
+    'Steiner Lynn;innosolv.Contact=88261;Keine Klapp-tauglichen Kontaktdaten;Kein Klapp-Konto moeglich;Anmeldung persoenlich aufnehmen',
   ];
   return zeilen.join('\r\n');
 }
@@ -3450,15 +3450,15 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
       conditionals: [],
     },
     {
-      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'completed', completedDate: '27.08.2026',
+      id: 'sei-2', number: '8002', title: 'Datenqualität prüfen', status: 'in-progress', dueDate: '04.09.2026',
       kind: 'step', stepType: 'task',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
       tasks: [
         { id: 'sei-t4', title: 'Beziehungen auf beide Elternteile prüfen', assignee: 'Meier Sandra', status: 'done' },
         { id: 'sei-t5', title: 'Sorgerecht plausibilisieren', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen (Mobilnummer)', assignee: 'Meier Sandra', status: 'done' },
-        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t6', title: 'Klapp-taugliche Kontaktdaten prüfen', assignee: 'Meier Sandra', status: 'done' },
+        { id: 'sei-t7', title: 'Nacherfassung bei der Einwohnerkontrolle auslösen', assignee: 'Meier Sandra', status: 'open' },
       ],
       inputs: [
         { id: 'sei-i6', type: 'field', label: 'Vollständige Datensätze', value: '18 von 24', required: true, fieldType: 'text', thematicGroup: 'Datenqualität' },
@@ -3470,12 +3470,12 @@ const PROCESS_SCHULEINSCHREIBUNG: Process = {
       ],
       completionCriteria: [
         { id: 'sei-c2', description: 'Datenqualität geprüft', met: true },
-        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: true },
+        { id: 'sei-c3', description: 'Nacherfassung ausgelöst', met: false },
       ],
       conditionals: [{ id: 'sei-co1', condition: 'Sorgerecht unbestätigt > 0', thenAction: 'Belegdokument bei den Erziehungsberechtigten einfordern, Anmeldung nur durch sorgeberechtigten Elternteil zulassen' }],
     },
     {
-      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'in-progress', dueDate: '08.09.2026',
+      id: 'sei-3', number: '8003', title: 'Klapp-Registrationsbrief erstellen und versenden', status: 'pending', dueDate: '08.09.2026',
       kind: 'step', stepType: 'activity', activityKind: 'document',
       responsible: 'Meier Sandra, Schulverwaltung', category: 'Schuleinschreibung',
       contextLinks: [G('9')],
@@ -3779,7 +3779,6 @@ const INSTANCE_DOSSIER_SEI: Process = {
   ...PROCESS_SCHULEINSCHREIBUNG,
   id: 'inst-dossier-sei', kind: 'instance', templateId: 'proc-sei',
   startedAt: '24.08.2026', startedBy: 'Geplanter Task (ContactSync)', instanceState: 'running', events: [
-    { id: 'sei-e3', timestamp: '2026-08-27T10:15:00Z', type: 'step_completed', description: 'Schritt «Datenqualität prüfen» abgeschlossen', actor: 'Meier Sandra', stepId: 'sei-2', stepTitle: 'Datenqualität prüfen' },
     { id: 'sei-e2', timestamp: '2026-08-24T02:56:00Z', type: 'step_completed', description: 'Schritt «Jahrgang aus ContactSync beziehen» abgeschlossen, 24 Kinder im Jahrgang 2027/28', actor: 'Meier Sandra', stepId: 'sei-1', stepTitle: 'Jahrgang aus ContactSync beziehen' },
     { id: 'sei-e1', timestamp: '2026-08-24T02:15:00Z', type: 'started', description: 'Workflow «Schuleinschreibung Kindergarten 2027/28» durch den geplanten ContactSync-Task gestartet', actor: 'Geplanter Task (ContactSync)' },
   ],
@@ -4095,9 +4094,9 @@ const DOSSIER_SCHULSTART: Dossier = {
   processId: 'inst-dossier-sei',
   notes: [
     { id: 'sei-n1', date: '24.08.2026 06:30', author: 'System (ContactSync)', subject: 'ContactSync-Lauf vom 24.08.2026', text: '26 neue Kontakte aus der Innosolv-EWK bezogen, 24 davon im Kindergarten-Jahrgang 2027/28. Beziehungen und Haushalte wurden mitsynchronisiert. Der Lauf lief 41 Minuten und meldet drei Warnungen.', visibility: 'intern' },
-    { id: 'sei-n2', date: '27.08.2026 10:15', author: 'Meier Sandra', subject: 'Datenqualität geprüft', text: '18 von 24 Datensätzen sind vollständig. Die sechs Lücken betreffen drei Kinder ohne zweiten Elternteil, zwei mit unbestätigtem Sorgerecht und drei Familien ohne Mobilnummer für Klapp. Die Lückenliste ist an die Einwohnerkontrolle gegangen, die Einschreibung startet parallel.', visibility: 'intern' },
+    { id: 'sei-n2', date: '27.08.2026 10:15', author: 'Meier Sandra', subject: 'Datenqualität geprüft', text: '18 von 24 Datensätzen sind vollständig. Die sechs Lücken betreffen drei Kinder ohne zweiten Elternteil, zwei mit unbestätigtem Sorgerecht und drei Familien ohne Klapp-taugliche Kontaktdaten. Die Lückenliste geht als Excel an die Einwohnerkontrolle, die Einschreibung startet parallel.', visibility: 'intern' },
     { id: 'sei-n3', date: '27.08.2026 10:30', author: 'Vogt Daniel', subject: 'Hinweis Sorgerecht', text: 'Beim Sorgerecht nicht auf den EWK-Wert abstützen. Dort steht oft «ja», ohne dass es belegt ist. Wir brauchen das Belegdokument, sonst ist die Anmeldung angreifbar.', visibility: 'intern' },
-    { id: 'sei-n4', date: '01.09.2026 08:00', author: 'Meier Sandra', text: 'Nächster Schritt: Angebot in Klapp publizieren und die Registrationsbriefe drucken. Die drei Familien ohne Klapp-Konto brauchen einen separaten Weg, letztes Jahr haben wir die Anmeldung dort persönlich aufgenommen.', visibility: 'intern' }
+    { id: 'sei-n4', date: '01.09.2026 08:00', author: 'Meier Sandra', text: 'Sobald die Lückenliste bei der Einwohnerkontrolle ist: Angebot in Klapp publizieren und die Registrationsbriefe drucken. Die drei Familien ohne Klapp-Konto brauchen einen separaten Weg, letztes Jahr haben wir die Anmeldung dort persönlich aufgenommen.', visibility: 'intern' }
   ],
   participants: [
     { id: 'sei-p1', role: 'Leiterin Schulverwaltung', roleType: 'internal', name: 'Meier Sandra', organization: 'Schulverwaltung Dorfname', email: 's.meier@schule-dorf.ch', phone: '044 222 33 44', since: '24.08.2026' },

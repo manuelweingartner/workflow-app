@@ -218,22 +218,34 @@ Excel beim Encoding.
 
 ## Demo-Zustand der Schuleinschreibung
 
-**Die Instanz steht auf Schritt 8003**, also 2 von 7 Schritten erledigt. 8001 und
-8002 sind abgeschlossen und zeigen ihre Ergebnisse, darunter den historischen
-ContactSync-Lauf im Panel. Ab 8003 klickt man vorwärts.
+**Die Instanz steht auf Schritt 8002**, also 1 von 7 Schritten erledigt (seit
+03.09.2026, vorher 8003). 8001 ist abgeschlossen und zeigt den historischen
+ContactSync-Lauf im Panel. Ab 8002 klickt man vorwärts.
+
+**Warum 8002 und nicht 8003:** Dokument- und Schnittstellenknöpfe rendert das
+Schrittdetail nur bei `step.status === 'in-progress'`. Auf einem abgeschlossenen
+Schritt steht ein Dummy-«Ausführen» ohne Wirkung. Stand die Instanz auf 8003,
+liess sich die Lückenliste in 8002 darum nicht öffnen.
 
 Der Demo-Pfad:
-1. **8003** «Einschulungs-Angebot an Klapp senden»: Panel mit den
+1. **8002** «Lückenliste exportieren»: öffnet die CSV in Excel und hakt die
+   Aufgabe «Nacherfassung auslösen» ab. Danach das Kriterium «Nacherfassung
+   ausgelöst» setzen und den Schritt abschliessen, 8003 wird aktiv.
+2. **8003** «Einschulungs-Angebot an Klapp senden»: Panel mit den
    Angebotsoptionsgruppen. Danach «In Word öffnen»: 24 Registrationsbriefe, das
    Dokumentfeld gilt danach als vorhanden.
-2. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Das Panel ist
+3. **8004** «Abgleich auslösen»: Anmeldestand je Kind, 6 von 24. Das Panel ist
    hier nur Anzeige, es verweist aufs Gateway. Schritt abschliessen.
-3. **Gateway «Anmeldungen noch offen?»**: hier läuft die Schleife. «Runde
+4. **Gateway «Anmeldungen noch offen?»**: hier läuft die Schleife. «Runde
    durchlaufen» dreimal (18, dann 11, dann 5 Briefe), danach sperrt der Knopf
    und ein Fall bleibt fürs Telefon. «Schleife verlassen & weiter» führt auf 8006.
-4. Rückwärts anschauen: **8001** zeigt den ContactSync-Lauf mit 26 bezogenen
-   Kontakten und drei Warnungen, **8002** die Datenqualität und den
-   Excel-Export der Lückenliste.
+5. Rückwärts anschauen: **8001** zeigt den ContactSync-Lauf mit 26 bezogenen
+   Kontakten und drei Warnungen.
+
+**Die Mobilnummer kommt nirgends mehr vor** (03.09.2026, Rückmeldung aus der
+Fachabteilung): für die Klapp-Registration braucht es keine Mobilnummer, die
+Erwähnung hätte verwirrt. Die dritte Lückenkategorie heisst jetzt in Aufgabe,
+Notiz und CSV «Klapp-taugliche Kontaktdaten».
 
 ## Die Schleife wird am Gateway bedient
 
@@ -298,7 +310,7 @@ entfernt (01.09.2026, war zu überladen):
 | entfernt | steht stattdessen in |
 |---|---|
 | Datenquelle, Selektions-ID | Konfigurationsblock des ContactSync-Panels |
-| Fehlender zweiter Elternteil, Sorgerecht unbestätigt, Keine Mobilnummer | zu einem Feld «Datenlücken» zusammengefasst, Aufschlüsselung in der CSV |
+| Fehlender zweiter Elternteil, Sorgerecht unbestätigt, Keine Klapp-tauglichen Kontaktdaten | zu einem Feld «Datenlücken» zusammengefasst, Aufschlüsselung in der CSV |
 | Briefvorlage, Versanddatum | nicht entscheidungsrelevant |
 | Anmeldefrist auf 8004, Maximale Mahnstufe | Klapp-Panel («Frist 30.09.2026», «Mahnstufe 0 von 3») |
 | Anmeldung abgeschlossen auf 8004 | Klapp-Panel als Zähler. Es war ein **editierbares Textfeld für einen berechneten Wert**, also gleich doppelt falsch |
@@ -312,7 +324,9 @@ geführte Werte laufen auseinander, sobald einer davon berechnet wird.
 `offen -> in Arbeit -> erledigt`, es braucht also **zwei** Klicks bis erledigt.
 Und Schritte mit `stepType: 'activity'` verbergen Aufgaben und Kriterien und
 lassen sich direkt abschliessen (`canCompleteStep` lässt sie durch). Das
-betrifft 8001, 8003, 8004 und ist bestehende Konvention, kein Fehler.
+betrifft 8001, 8003, 8004 und ist bestehende Konvention, kein Fehler. 8002 ist
+ein `task`-Schritt: dort müssen alle Aufgaben erledigt und beide Kriterien
+gesetzt sein, bevor «Schritt abschliessen» freigibt.
 
 ### Fachliche Quellen (Confluence, Stand 01.09.2026)
 
