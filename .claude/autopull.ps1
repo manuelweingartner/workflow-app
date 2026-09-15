@@ -1,6 +1,6 @@
 # Auto-pull script for workflow-app — runs via Windows Scheduled Task
 $ErrorActionPreference = 'Continue'
-$repo    = "C:\CLAUDE\workflow-app"
+$repo    = Split-Path -Parent $PSScriptRoot
 $logFile = Join-Path $repo ".claude\autopull.log"
 $stamp   = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
