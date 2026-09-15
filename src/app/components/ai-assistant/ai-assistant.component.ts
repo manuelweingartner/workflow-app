@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
 import { Process, ProcessStep } from '../../models/process.model';
+import { MatchableDomain, matchDomain } from '../../services/domain-match';
 
 interface AiMessage {
   role: 'user' | 'ai';
@@ -335,6 +336,15 @@ export class AiAssistantComponent {
         this.makeStep('Vertrag erstellen', 'pending'),
         this.makeStep('Onboarding', 'pending', 'subprocess'),
       ],
+      'einbürgerung': [
+        this.makeStep('Gesuch eingereicht', 'completed'),
+        this.makeStep('Unterlagen prüfen', 'in-progress'),
+        this.makeStep('Sprach- & Integrationsnachweis', 'pending', 'parallel'),
+        this.makeStep('Anhörung', 'pending'),
+        this.makeStep('Entscheid Gemeinderat', 'pending', 'decision'),
+        this.makeStep('Kanton / Bund weiterleiten', 'pending'),
+        this.makeStep('Abschluss', 'pending'),
+      ],
       'default': [
         this.makeStep('Antrag / Auslöser', 'completed'),
         this.makeStep('Prüfung', 'in-progress'),
@@ -345,11 +355,22 @@ export class AiAssistantComponent {
       ],
     };
 
-    const lower = prompt.toLowerCase();
-    for (const [key, steps] of Object.entries(templates)) {
-      if (key !== 'default' && lower.includes(key)) return steps;
-    }
-    return templates['default'];
+    // Same matcher as the KI+ import dialog, so both entry points answer the
+    // same sentence alike. The plain `includes(key)` scan this replaces let the
+    // object order decide and knew no naturalisation at all.
+    const domains: Array<MatchableDomain & { key: string }> = [
+      { key: 'bewilligung', keywords: ['bewilligung', 'baugesuch', 'baubewilligung', 'bau'] },
+      { key: 'beschwerde', keywords: ['beschwerde', 'rekurs', 'einsprache'] },
+      { key: 'anstellung', keywords: ['anstellung', 'rekrutierung', 'stellenausschreibung', 'stellenbesetzung', 'personal', 'bewerbung', 'vakanz'] },
+      {
+        key: 'einbürgerung',
+        keywords: ['einbürgerung', 'einbürger', 'bürgerrecht'],
+        strong: ['einbürger', 'eingebürgert', 'bürgerrecht'],
+      },
+    ];
+
+    const matched = matchDomain(prompt, domains);
+    return templates[matched?.key ?? 'default'];
   }
 
   private makeStep(title: string, status: ProcessStep['status'], stepType?: string): ProcessStep {

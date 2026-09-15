@@ -2,6 +2,7 @@ import { Component, Output, EventEmitter, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProcessService } from '../../services/process.service';
 import { Process, ProcessStep, Branch } from '../../models/process.model';
+import { MatchableDomain, matchDomain } from '../../services/domain-match';
 
 @Component({
   selector: 'app-ki-import-dialog',
@@ -67,7 +68,7 @@ import { Process, ProcessStep, Branch } from '../../models/process.model';
             ></textarea>
             <p class="hint-text">
               <i class="material-icons" style="font-size:14px;vertical-align:middle">info_outline</i>
-              Unterstützte Domänen: Baugesuch, Beschwerde, Rekrutierung, Rechnung, Vertrag — oder beliebige Freitextbeschreibung.
+              Unterstützte Domänen: Baugesuch, Beschwerde, Einbürgerung, Rekrutierung, Rechnung, Vertrag, oder beliebige Freitextbeschreibung.
             </p>
           }
 
@@ -542,7 +543,7 @@ export class KiImportDialogComponent {
     const lower = text.toLowerCase();
 
     type StepDef = [string, string, ProcessStep['status']];
-    const domains: Array<{ keywords: string[]; title: string; steps: StepDef[] }> = [
+    const domains: Array<MatchableDomain & { title: string; steps: StepDef[] }> = [
       {
         keywords: ['bau', 'baugesuch', 'baubewilligung', 'bewilligung'],
         title: 'Baugesuchsprozess',
@@ -570,7 +571,9 @@ export class KiImportDialogComponent {
         ],
       },
       {
-        keywords: ['anstellung', 'rekrutierung', 'stellen', 'personal', 'bewerbung'],
+        // No bare 'stellen' here: it hides inside "erstellen", the most common verb
+        // in this input box, and turned every "Workflow erstellen" into a recruitment.
+        keywords: ['anstellung', 'rekrutierung', 'stellenausschreibung', 'stellenbesetzung', 'personal', 'bewerbung', 'vakanz'],
         title: 'Rekrutierungsprozess',
         steps: [
           ['Stellenausschreibung', 'task', 'completed'],
@@ -608,6 +611,8 @@ export class KiImportDialogComponent {
       },
       {
         keywords: ['einbürgerung', 'einbürger', 'bürgerrecht'],
+        // Unmissverständlich: steht eines davon im Text, ist es dieser Prozess.
+        strong: ['einbürger', 'eingebürgert', 'bürgerrecht'],
         title: 'Einbürgerungsverfahren',
         steps: [
           ['Gesuch eingereicht', 'task', 'completed'],
@@ -621,7 +626,7 @@ export class KiImportDialogComponent {
       },
     ];
 
-    const matched = domains.find(d => d.keywords.some(k => lower.includes(k)));
+    const matched = matchDomain(lower, domains);
     const guessedTitle = matched?.title ?? (text.split(/[.\n]/)[0]?.trim().slice(0, 60) || 'Importierter Prozess');
 
     const baseSteps: StepDef[] = matched?.steps ?? [

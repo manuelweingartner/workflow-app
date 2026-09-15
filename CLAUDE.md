@@ -351,6 +351,74 @@ zuerst dort nachlesen:
 - CMI nennt das Einzelfall-Dossier im Schulumfeld **Lernendendossier**.
 
 
+## KI+ Import: Domänen werden gewichtet, nicht durchsucht
+
+Der Wizard in `ki-import-dialog.component.ts` (Eingabe, Vorschau, Konfigurieren)
+liest im Reiter «BPMN / XML» echtes XML mit dem `DOMParser` und im Reiter «Text /
+Beschreibung» Freitext gegen sechs hartcodierte Domänen-Vorlagen (Baugesuch,
+Beschwerde, Rekrutierung, Rechnung, Vertrag, Einbürgerung). Erreichbar ist er
+nur über «KI+ Import» im Dashboard.
+
+**Die Zuordnung lief bis 04.09.2026 auf `domains.find(...)`, also erster Treffer
+in Array-Reihenfolge, und das hat still das Falsche vorgeschlagen.** «Einbürgerung»
+allein traf richtig, «Workflow für Einbürgerung erstellen» landete auf dem
+Rekrutierungsprozess mit Interviews. Grund: das Stichwort `stellen` steckt in
+`er-stellen`, und Rekrutierung stand an Position 3, Einbürgerung an Position 6.
+Relevanz spielte gar keine Rolle, nur die Listenreihenfolge.
+
+Jetzt bewertet `matchDomain()` **jede** Domäne und nimmt die beste. Ein Stichwort
+zählt seine eigene Länge, verdoppelt wenn es am Wortanfang sitzt. Ein
+spezifischer Begriff wie `einbürgerung` schlägt damit jeden Zufallstreffer
+mitten in einem längeren Wort, unabhängig von der Reihenfolge.
+`foldUmlauts()` vergleicht umlauttolerant, «Einbuergerung» trifft also auch.
+
+**Zwei Regeln für neue Stichwörter:**
+- **Kein Verbstamm, der in einem Alltagswort steckt.** `stellen` ist darum raus
+  und durch `stellenausschreibung`, `stellenbesetzung`, `vakanz` ersetzt.
+  «Prozess erstellen» trifft seither bewusst gar keine Domäne und fällt auf die
+  generische Vorlage, was richtig ist.
+- **Reihenfolge im Array ist keine Priorität mehr.** Wer eine Domäne nach oben
+  schiebt, gewinnt damit nichts. Wer sie gewinnen lassen will, braucht ein
+  längeres oder spezifischeres Stichwort.
+
+### Beide Einstiege teilen sich einen Matcher (15.09.2026)
+
+Die Zuordnung liegt seit dem 15.09.2026 in `src/app/services/domain-match.ts`
+und wird von **beiden** Stellen benutzt, die aus Freitext einen Prozess raten:
+dem Import-Dialog und dem KI-Assistenten (`ai-assistant.component.ts`). Vorher
+hatte der Assistent eine eigene, kleinere Vorlagenliste, die mit
+`lower.includes(key)` über ein Objekt lief, also wieder die Reihenfolge
+entscheiden liess, und Einbürgerung kam darin gar nicht vor. Wer eine Domäne
+ergänzt, macht das am gemeinsamen Modul, sonst antworten die zwei Wege an einer
+Demo unterschiedlich auf denselben Satz.
+
+### Starke Marker schlagen die Punktzahl (15.09.2026)
+
+Die Gewichtung allein reicht für eine Live-Demo nicht. Punkte summieren sich,
+also gewinnt ein Satz, der nebenbei «Baugesuch und Baubewilligung» erwähnt,
+gegen ein einzelnes «Einbürgerung». Darum hat eine Domäne neu ein optionales
+`strong: string[]`. Steht ein solcher Marker im Text, gewinnt die Domäne
+**sofort**, noch vor jeder Punkterechnung. Einbürgerung führt `einbürger`,
+`eingebürgert` und `bürgerrecht`. Damit ist jedes Verb egal: erstellen,
+erfassen, anlegen, aufsetzen.
+
+`foldUmlauts()` fällt seit dem gleichen Tag auf den **nackten Vokal** statt auf
+die ae/oe/ue-Schreibweise. Text und Stichwort laufen beide durch die Faltung,
+also treffen «Einbürgerung», «Einbuergerung» und der Tippfehler «Einburgerung»
+alle dasselbe. Wer ein `strong`-Wort ergänzt: es muss ein Wortstamm sein, der in
+keinem Alltagswort vorkommt, denn es gibt keine Gegenprobe mehr.
+
+### Der Fix nützt nichts, solange er nicht deployt ist (15.09.2026)
+
+Genau das ist an der Demo passiert. Die Gewichtung lag seit dem 04.09. im
+Arbeitsbaum, **uncommittet**, und `gh-pages` trug noch den Build vom 03.09. mit
+`keywords:[...,'stellen',...]` und `domains.find(...)`. Auf
+`manuelweingartner.github.io/workflow-app/` schlug «Einbürgerungsverfahren
+erstellen» darum weiter den Rekrutierungsprozess vor, während lokal alles
+richtig war. **Vor jeder Demo prüfen, welcher Stand live ist**, nicht welcher im
+Editor steht: `git fetch origin gh-pages` und im gebauten `main-*.js` nach dem
+erwarteten Stichwort greppen.
+
 ## Zeilenenden: das Repo ist gemischt
 
 `core.autocrlf` ist **false** und es gibt kein `.gitattributes`, Dateien liegen
